@@ -36,4 +36,43 @@ Custom / Enterprise licenses are also available, please contact us for a quote.
 * The free community version of Redimo only allows operations with eventual consistency. The commercial version adds a command and connection level setting that allows switching between eventual and strong consistency. 
 * The commercial version also includes an option to use the DAX write-through cache for very high (microseconds) levels of performance.
 
+## Supported Commands
+
+### Connections
+* [ ] `AUTH`
+* [ ] `ECHO`
+* [ ] `PING`
+* [ ] `QUIT`
+* [ ] `SELECT`
+* [ ] `SWAPDB` - Not feasible
+
+### Strings
+
+* [ ] `APPEND`
+* [ ] `BITCOUNT`
+* [ ] `BITFIELD`
+* [ ] `BITOP`
+* [ ] `BITPOS`
+* [ ] `DECR`
+* [ ] `DECRBY`
+* [ ] `GET`
+* [ ] `GETBIT`
+* [ ] `GETRANGE`
+* [ ] `GETSET`
+* [ ] `INCR`
+* [ ] `INCRBY`
+* [ ] `INCRBYFLOAT`
+* [ ] `MGET`
+* [ ] `MSET`
+* [ ] `MSETNX`
+* [ ] `PSETEX`
+* [ ] `SET`
+* [ ] `SETBIT`
+* [ ] `SETEX`
+* [ ] `SETNX`
+* [ ] `SETRANGE`
+* [ ] `STRLEN`
+
+
+
 
