@@ -73,6 +73,90 @@ Custom / Enterprise licenses are also available, please contact us for a quote.
 * [ ] `SETRANGE`
 * [ ] `STRLEN`
 
+### Streams
+
+* [ ] `XACK`
+* [ ] `XADD`
+* [ ] `XCLAIM`
+* [ ] `XDEL`
+* [ ] `XGROUP`
+* [ ] `XINFO`
+* [ ] `XLEN`
+* [ ] `XPENDING`
+* [ ] `XRANGE`
+* [ ] `XREAD`
+* [ ] `XREADGROUP`
+* [ ] `XREVRANGE`
+* [ ] `XTRIM`
+
+### Sorted Sets
+
+* [ ] `BZPOPMAX`
+* [ ] `BZPOPMIN`
+* [ ] `ZADD`
+* [ ] `ZCARD`
+* [ ] `ZCOUNT`
+* [ ] `ZINCRBY`
+* [ ] `ZINTERSTORE`
+* [ ] `ZLEXCOUNT`
+* [ ] `ZPOPMAX`
+* [ ] `ZPOPMIN`
+* [ ] `ZRANGE`
+* [ ] `ZRANGEBYLEX`
+* [ ] `ZRANGEBYSCORE`
+* [ ] `ZRANK`
+* [ ] `ZREM`
+* [ ] `ZREMRANGEBYLEX`
+* [ ] `ZREMRANGEBYRANK`
+* [ ] `ZREMRANGEBYSCORE`
+* [ ] `ZREVRANGE`
+* [ ] `ZREVRANGEBYLEX`
+* [ ] `ZREVRANGEBYSCORE`
+* [ ] `ZREVRANK`
+* [ ] `ZSCAN`
+* [ ] `ZSCORE`
+* [ ] `ZUNIONSTORE`
+
+### Sets
+
+* [ ] `SADD`
+* [ ] `SCARD`
+* [ ] `SDIFF`
+* [ ] `SDIFFSTORE`
+* [ ] `SINTER`
+* [ ] `SINTERSTORE`
+* [ ] `SISMEMBER`
+* [ ] `SMEMBERS`
+* [ ] `SMOVE`
+* [ ] `SPOP`
+* [ ] `SRANDMEMBER`
+* [ ] `SREM`
+* [ ] `SSCAN`
+* [ ] `SUNION`
+* [ ] `SUNIONSTORE`
+
+### Lists
+
+* [ ] `BLPOP`
+* [ ] `BRPOP`
+* [ ] `BRPOPLPUSH`
+* [ ] `LINDEX`
+* [ ] `LINSERT`
+* [ ] `LLEN`
+* [ ] `LPOP`
+* [ ] `LPUSH`
+* [ ] `LPUSHX`
+* [ ] `LRANGE`
+* [ ] `LREM`
+* [ ] `LSET`
+* [ ] `LTRIM`
+* [ ] `RPOP`
+* [ ] `RPOPLPUSH`
+* [ ] `RPUSH`
+* [ ] `RPUSHX`
+
+
+
 
 
 
