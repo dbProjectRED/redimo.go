@@ -34,6 +34,7 @@ Custom / Enterprise licenses are also available, please contact us for a quote.
 ## Version Differences
 * In the free community version of Redimo, Pub/Sub support is bounded to each single instance – no events will be sent or received between servers. The commercial version adds an adapter to AWS IoT Core (a serverless near-real-time messaging platform) to allow Pub/Sub across your entire fleet of servers.
 * The free community version of Redimo only allows operations with eventual consistency. The commercial version adds a command and connection level setting that allows switching between eventual and strong consistency. 
+* The free community version does not support Lua scripting, which the commercial version does.
 * The commercial version also includes an option to use the DAX write-through cache for very high (microseconds) levels of performance.
 
 ## Supported Commands
@@ -47,7 +48,6 @@ Custom / Enterprise licenses are also available, please contact us for a quote.
 * [ ] `SWAPDB` - Not feasible
 
 ### Strings
-
 * [ ] `APPEND`
 * [ ] `BITCOUNT`
 * [ ] `BITFIELD`
@@ -74,7 +74,6 @@ Custom / Enterprise licenses are also available, please contact us for a quote.
 * [ ] `STRLEN`
 
 ### Streams
-
 * [ ] `XACK`
 * [ ] `XADD`
 * [ ] `XCLAIM`
@@ -90,7 +89,6 @@ Custom / Enterprise licenses are also available, please contact us for a quote.
 * [ ] `XTRIM`
 
 ### Sorted Sets
-
 * [ ] `BZPOPMAX`
 * [ ] `BZPOPMIN`
 * [ ] `ZADD`
@@ -118,7 +116,6 @@ Custom / Enterprise licenses are also available, please contact us for a quote.
 * [ ] `ZUNIONSTORE`
 
 ### Sets
-
 * [ ] `SADD`
 * [ ] `SCARD`
 * [ ] `SDIFF`
@@ -136,7 +133,6 @@ Custom / Enterprise licenses are also available, please contact us for a quote.
 * [ ] `SUNIONSTORE`
 
 ### Lists
-
 * [ ] `BLPOP`
 * [ ] `BRPOP`
 * [ ] `BRPOPLPUSH`
@@ -154,6 +150,85 @@ Custom / Enterprise licenses are also available, please contact us for a quote.
 * [ ] `RPOPLPUSH`
 * [ ] `RPUSH`
 * [ ] `RPUSHX`
+
+### HyperLogLog
+* [ ] `PFADD`
+* [ ] `PFCOUNT`
+* [ ] `PFMERGE`
+
+### Hashes
+* [ ] `HDEL`
+* [ ] `HEXISTS`
+* [ ] `HGET`
+* [ ] `HGETALL`
+* [ ] `HINCRBY`
+* [ ] `HINCRBYFLOAT`
+* [ ] `HKEYS`
+* [ ] `HLEN`
+* [ ] `HMGET`
+* [ ] `HMSET`
+* [ ] `HSCAN`
+* [ ] `HSET`
+* [ ] `HSETNX`
+* [ ] `HSTRLEN`
+* [ ] `HVALS`
+
+### Geo
+* [ ] `GEOADD`
+* [ ] `GEODIST`
+* [ ] `GEOHASH`
+* [ ] `GEOPOS`
+* [ ] `GEORADIUS`
+* [ ] `GEORADIUSBYMEMBER`
+
+### PubSub
+* [ ] `PSUBSCRIBE`
+* [ ] `PUBLISH`
+* [ ] `PUBSUB`
+* [ ] `PUNSUBSCRIBE`
+* [ ] `SUBSCRIBE`
+* [ ] `UNSUBSCRIBE`
+
+### Keys
+* [ ] `DEL`
+* [ ] `DUMP`
+* [ ] `EXISTS`
+* [ ] `EXPIRE`
+* [ ] `EXPIREAT`
+* [ ] `KEYS`
+* [ ] `MIGRATE`
+* [ ] `MOVE`
+* [ ] `OBJECT`
+* [ ] `PERSIST`
+* [ ] `PEXPIRE`
+* [ ] `PEXPIREAT`
+* [ ] `PTTL`
+* [ ] `RANDOMKEY`
+* [ ] `RENAME`
+* [ ] `RENAMENX`
+* [ ] `RESTORE`
+* [ ] `SCAN`
+* [ ] `SORT`
+* [ ] `TOUCH`
+* [ ] `TTL`
+* [ ] `TYPE`
+* [ ] `UNLINK`
+* [ ] `WAIT`
+
+### Scripting
+* [ ] `EVAL`
+* [ ] `EVALSHA`
+* [ ] `SCRIPT DEBUG`
+* [ ] `SCRIPT EXISTS`
+* [ ] `SCRIPT FLUSH`
+* [ ] `SCRIPT KILL`
+* [ ] `SCRIPT LOAD`
+
+
+
+
+
+
 
 
 
