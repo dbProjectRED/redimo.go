@@ -238,3 +238,37 @@ func (rc RedimoClient) STRLEN(key string) (size int64, err error) {
 	}
 	return
 }
+
+// MGET conforms to https://redis.io/commands/mget
+func (rc RedimoClient) MGET(keys []string) (outputs [][]byte, err error) {
+	inputRequests := make([]dynamodb.TransactGetItem, len(keys))
+	outputs = make([][]byte, len(keys))
+
+	for _, key := range keys {
+		inputRequests = append(inputRequests, dynamodb.TransactGetItem{
+			Get: &dynamodb.Get{
+				ExpressionAttributeNames: expAttrNames,
+				Key: keyDef{
+					pk: key,
+					sk: "0",
+				}.toAV(),
+				ProjectionExpression: aws.String("#val"),
+				TableName:            aws.String(rc.table),
+			},
+		})
+	}
+	resp, err := rc.client.TransactGetItemsRequest(&dynamodb.TransactGetItemsInput{
+		TransactItems: inputRequests,
+	}).Send(context.TODO())
+	if err != nil {
+		return
+	}
+	for _, out := range resp.Responses {
+		if len(out.Item) > 0 {
+			outputs = append(outputs, parseItem(out.Item).significantValue())
+		} else {
+			outputs = append(outputs, nil)
+		}
+	}
+	return
+}
