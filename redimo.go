@@ -272,3 +272,27 @@ func (rc RedimoClient) MGET(keys []string) (outputs [][]byte, err error) {
 	}
 	return
 }
+
+// MSET conforms to https://redis.io/commands/mset
+func (rc RedimoClient) MSET(data map[string][]byte) (err error) {
+	var inputs []dynamodb.TransactWriteItem
+	for k, v := range data {
+		inputs = append(inputs, dynamodb.TransactWriteItem{
+			Put: &dynamodb.Put{
+				Item: itemDef{
+					keyDef: keyDef{
+						pk: k,
+						sk: "0",
+					},
+					val: v,
+				}.toAV(),
+				TableName: aws.String(rc.table),
+			},
+		})
+	}
+	_, err = rc.client.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
+		ClientRequestToken: nil,
+		TransactItems:      inputs,
+	}).Send(context.TODO())
+	return
+}
