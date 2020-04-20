@@ -275,10 +275,26 @@ func (rc RedimoClient) MGET(keys []string) (outputs [][]byte, err error) {
 
 // MSET conforms to https://redis.io/commands/mset
 func (rc RedimoClient) MSET(data map[string][]byte) (err error) {
+	_, err = rc.internalMSET(data, Flags{})
+	return
+}
+
+// MSETNX conforms to https://redis.io/commands/msetnx
+func (rc RedimoClient) MSETNX(data map[string][]byte) (ok bool, err error) {
+	return rc.internalMSET(data, Flags{IfNotExists})
+}
+
+func (rc RedimoClient) internalMSET(data map[string][]byte, flags Flags) (ok bool, err error) {
 	var inputs []dynamodb.TransactWriteItem
+	var condition *string
+	if flags.Has(IfNotExists) {
+		condition = aws.String("(attribute_not_exists(#pk))")
+	}
 	for k, v := range data {
 		inputs = append(inputs, dynamodb.TransactWriteItem{
 			Put: &dynamodb.Put{
+				ConditionExpression:      condition,
+				ExpressionAttributeNames: expAttrNames,
 				Item: itemDef{
 					keyDef: keyDef{
 						pk: k,
@@ -294,5 +310,17 @@ func (rc RedimoClient) MSET(data map[string][]byte) (err error) {
 		ClientRequestToken: nil,
 		TransactItems:      inputs,
 	}).Send(context.TODO())
-	return
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			switch aerr.Code() {
+			case dynamodb.ErrCodeConditionalCheckFailedException,
+				dynamodb.ErrCodeTransactionInProgressException,
+				dynamodb.ErrCodeTransactionConflictException,
+				dynamodb.ErrCodeTransactionCanceledException:
+				return false, nil
+			}
+		}
+		return
+	}
+	return true, nil
 }
