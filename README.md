@@ -53,23 +53,23 @@ Custom / Enterprise licenses are also available, please contact us for a quote.
 * [ ] `BITFIELD`
 * [ ] `BITOP`
 * [ ] `BITPOS`
-* [ ] `DECR`
-* [ ] `DECRBY`
-* [ ] `GET`
+* [X] `DECR`
+* [X] `DECRBY`
+* [X] `GET`
 * [ ] `GETBIT`
 * [ ] `GETRANGE`
-* [ ] `GETSET`
-* [ ] `INCR`
-* [ ] `INCRBY`
-* [ ] `INCRBYFLOAT`
-* [ ] `MGET`
-* [ ] `MSET`
-* [ ] `MSETNX`
+* [X] `GETSET`
+* [X] `INCR`
+* [X] `INCRBY`
+* [X] `INCRBYFLOAT`
+* [X] `MGET`
+* [X] `MSET`
+* [X] `MSETNX`
 * [ ] `PSETEX`
-* [ ] `SET`
+* [X] `SET`
 * [ ] `SETBIT`
-* [ ] `SETEX`
-* [ ] `SETNX`
+* [X] `SETEX`
+* [X] `SETNX`
 * [ ] `SETRANGE`
 * [ ] `STRLEN`
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	redimo2 "github.com/sudhirj/redimo/redimo"
 	"log"
 	"strings"
 	"sync"
@@ -11,7 +12,7 @@ import (
 var addr = ":6380"
 
 func main() {
-	redimo := RedimoClient{}
+	redimo := redimo2.RedimoClient{}
 	var mu sync.RWMutex
 	var items = make(map[string][]byte)
 	go log.Printf("started server at %s", addr)
