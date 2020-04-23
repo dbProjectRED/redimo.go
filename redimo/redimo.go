@@ -22,6 +22,14 @@ var expressionAttributeNames = map[string]string{
 	"#score": "score",
 }
 
+func expAttrNames(names ...string) map[string]string {
+	out := make(map[string]string)
+	for _, name := range names {
+		out["#"+name] = expressionAttributeNames["#"+name]
+	}
+	return out
+}
+
 type keyDef struct {
 	pk string
 	sk string
@@ -83,7 +91,7 @@ func parseItem(avm map[string]dynamodb.AttributeValue) (item itemDef) {
 	}
 
 	if avm["val"].N != nil {
-		num, _, _ := big.Float{}.Parse(aws.StringValue(avm["val"].N), 10)
+		num, _, _ := new(big.Float).Parse(aws.StringValue(avm["val"].N), 10)
 		item.val = NumericValue{bf: num}
 	} else if avm["val"].S != nil {
 		item.val = StringValue{str: aws.StringValue(avm["val"].S)}

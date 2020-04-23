@@ -7,6 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"math/big"
 	"strings"
+	"time"
 )
 
 // GET conforms to https://redis.io/commands/get
@@ -19,39 +20,40 @@ func (rc RedimoClient) GET(key string) (val Value, ok bool, err error) {
 	if err != nil || len(resp.Item) == 0 {
 		return
 	}
+
+	ok = true
 	val = parseItem(resp.Item).val
+
 	return
 }
 
 // SET conforms to https://redis.io/commands/set
-func (rc RedimoClient) SET(key string, value Value, ttl int64, flags Flags) (ok bool, err error) {
-	item := itemDef{
-		keyDef: keyDef{
-			pk: key,
-			sk: "0",
-		},
-		val: value,
-		ttl: ttl,
-	}
-	var conditionExpressions []string
+func (rc RedimoClient) SET(key string, value Value, ttl *time.Time, flags Flags) (ok bool, err error) {
+	var conditionExpression *string
 	var setClauses []string
+	var attrRefs []string
+	values := map[string]dynamodb.AttributeValue{}
 
 	setClauses = append(setClauses, "#val = :val")
+	attrRefs = append(attrRefs, "val")
+	values[":val"] = value.toAV()
 
 	if flags.Has(IfNotExists) {
-		conditionExpressions = append(conditionExpressions, "(attribute_not_exists(#pk))")
+		conditionExpression = aws.String("(attribute_not_exists(#pk))")
 	}
 	if flags.Has(IfAlreadyExists) {
-		conditionExpressions = append(conditionExpressions, "(attribute_exists(#pk))")
+		conditionExpression = aws.String("(attribute_exists(#pk))")
 	}
-	if !flags.Has(KeepTTL) {
+	if !flags.Has(KeepTTL) && ttl != nil {
 		setClauses = append(setClauses, "#ttl = :ttl")
+		attrRefs = append(attrRefs, "ttl")
+		values[":ttl"] = NumericValue{new(big.Float).SetInt64(ttl.Unix())}.toAV()
 	}
 
 	_, err = rc.client.UpdateItemRequest(&dynamodb.UpdateItemInput{
-		ConditionExpression:       aws.String(strings.Join(conditionExpressions, " AND ")),
-		ExpressionAttributeNames:  expressionAttributeNames,
-		ExpressionAttributeValues: item.eav(),
+		ConditionExpression:       conditionExpression,
+		ExpressionAttributeNames:  expAttrNames(attrRefs...),
+		ExpressionAttributeValues: values,
 		UpdateExpression:          aws.String("SET " + strings.Join(setClauses, " , ")),
 		Key: keyDef{
 			pk: key,
@@ -73,12 +75,12 @@ func (rc RedimoClient) SET(key string, value Value, ttl int64, flags Flags) (ok 
 }
 
 // SETNX conforms to https://redis.io/commands/setnx
-func (rc RedimoClient) SETNX(key string, value Value, ttl int64) (ok bool, err error) {
+func (rc RedimoClient) SETNX(key string, value Value, ttl *time.Time) (ok bool, err error) {
 	return rc.SET(key, value, ttl, Flags{IfNotExists})
 }
 
 // SETEX conforms to https://redis.io/commands/setex
-func (rc RedimoClient) SETEX(key string, value Value, ttl int64) (err error) {
+func (rc RedimoClient) SETEX(key string, value Value, ttl *time.Time) (err error) {
 	_, err = rc.SET(key, value, ttl, Flags{})
 	return
 }
