@@ -6,12 +6,144 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"math/big"
 	"strconv"
+	"strings"
 )
 
 type RedimoClient struct {
 	client            *dynamodb.Client
 	strongConsistency bool
 	table             string
+}
+
+const pk = "pk"
+const sk = "sk"
+const vk = "val"
+const tk = "ttl"
+const defSK = "."
+
+type expressionBuider struct {
+	conditions []string
+	clauses    map[string][]string
+	keys       map[string]struct{}
+	values     map[string]dynamodb.AttributeValue
+}
+
+func (b *expressionBuider) SET(clause string, key string, val dynamodb.AttributeValue) {
+	b.clauses["SET"] = append(b.clauses["SET"], clause)
+	b.keys[key] = struct{}{}
+	b.values[key] = val
+}
+
+func (b *expressionBuider) condition(condition string, refs ...string) {
+	b.conditions = append(b.conditions, condition)
+	for _, ref := range refs {
+		b.keys[ref] = struct{}{}
+	}
+}
+
+func (b *expressionBuider) conditionExpression() *string {
+	if len(b.conditions) == 0 {
+		return nil
+	}
+	return aws.String(strings.Join(b.conditions, ","))
+}
+
+func (b *expressionBuider) expressionAttributeNames() map[string]string {
+	if len(b.keys) == 0 {
+		return nil
+	}
+	out := make(map[string]string)
+	for n := range b.keys {
+		out["#"+n] = n
+	}
+	return out
+}
+
+func (b *expressionBuider) expressionAttributeValues() map[string]dynamodb.AttributeValue {
+	if len(b.values) == 0 {
+		return nil
+	}
+	out := make(map[string]dynamodb.AttributeValue)
+	for k, v := range b.values {
+		out[":"+k] = v
+	}
+	return out
+}
+
+func (b *expressionBuider) updateExpression() *string {
+	if len(b.clauses) == 0 {
+		return nil
+	}
+	var clauses []string
+	for k, v := range b.clauses {
+		clauses = append(clauses, k+" "+strings.Join(v, ", "))
+	}
+	return aws.String(strings.Join(clauses, " "))
+}
+
+func newExpresionBuilder() expressionBuider {
+	return expressionBuider{
+		conditions: []string{},
+		clauses:    make(map[string][]string),
+		keys:       make(map[string]struct{}),
+		values:     make(map[string]dynamodb.AttributeValue),
+	}
+}
+
+type attributeValueMap map[string]dynamodb.AttributeValue
+
+func (am attributeValueMap) set(k string, v dynamodb.AttributeValue) {
+	am[":"+k] = v
+}
+
+func (am attributeValueMap) toMap() map[string]dynamodb.AttributeValue {
+	if len(am) == 0 {
+		return nil
+	}
+	return am
+}
+
+type attributeNameSet map[string]struct{}
+
+func (as attributeNameSet) add(n string) {
+	as[n] = struct{}{}
+}
+
+func (as attributeNameSet) toMap() map[string]string {
+	if len(as) == 0 {
+		return nil
+	}
+	out := make(map[string]string)
+	for k, _ := range as {
+		out["#"+k] = k
+	}
+	return out
+}
+
+type clauseList struct {
+	list []string
+}
+
+func (cs *clauseList) add(clause string) {
+	cs.list = append(cs.list, clause)
+}
+
+func (cs *clauseList) SET() *string {
+	if len(cs.list) > 0 {
+		return aws.String("SET " + strings.Join(cs.list, " , "))
+	}
+	return nil
+}
+
+func (cs *clauseList) COND() *string {
+	if len(cs.list) > 0 {
+		return aws.String(strings.Join(cs.list, " , "))
+	}
+	return nil
+}
+
+func sf(format string, values ...interface{}) string {
+	return fmt.Sprintf(format, values...)
 }
 
 var expressionAttributeNames = map[string]string{
@@ -22,14 +154,6 @@ var expressionAttributeNames = map[string]string{
 	"#score": "score",
 }
 
-func expAttrNames(names ...string) map[string]string {
-	out := make(map[string]string)
-	for _, name := range names {
-		out["#"+name] = expressionAttributeNames["#"+name]
-	}
-	return out
-}
-
 type keyDef struct {
 	pk string
 	sk string
@@ -37,10 +161,10 @@ type keyDef struct {
 
 func (k keyDef) toAV() map[string]dynamodb.AttributeValue {
 	return map[string]dynamodb.AttributeValue{
-		"pk": {
+		pk: {
 			S: aws.String(k.pk),
 		},
-		"sk": {
+		sk: {
 			S: aws.String(k.sk),
 		},
 	}
@@ -112,7 +236,7 @@ const (
 
 type Flags []Flag
 
-func (flags Flags) Has(flag Flag) bool {
+func (flags Flags) has(flag Flag) bool {
 	for _, f := range flags {
 		if f == flag {
 			return true

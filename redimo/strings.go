@@ -2,11 +2,11 @@ package redimo
 
 import (
 	"context"
+	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/awserr"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"math/big"
-	"strings"
 	"time"
 )
 
@@ -14,7 +14,7 @@ import (
 func (rc RedimoClient) GET(key string) (val Value, ok bool, err error) {
 	resp, err := rc.client.GetItemRequest(&dynamodb.GetItemInput{
 		ConsistentRead: aws.Bool(rc.strongConsistency),
-		Key:            keyDef{pk: key, sk: "0"}.toAV(),
+		Key:            keyDef{pk: key, sk: defSK}.toAV(),
 		TableName:      aws.String(rc.table),
 	}).Send(context.TODO())
 	if err != nil || len(resp.Item) == 0 {
@@ -29,35 +29,28 @@ func (rc RedimoClient) GET(key string) (val Value, ok bool, err error) {
 
 // SET conforms to https://redis.io/commands/set
 func (rc RedimoClient) SET(key string, value Value, ttl *time.Time, flags Flags) (ok bool, err error) {
-	var conditionExpression *string
-	var setClauses []string
-	var attrRefs []string
-	values := map[string]dynamodb.AttributeValue{}
+	builder := newExpresionBuilder()
 
-	setClauses = append(setClauses, "#val = :val")
-	attrRefs = append(attrRefs, "val")
-	values[":val"] = value.toAV()
+	builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, value.toAV())
 
-	if flags.Has(IfNotExists) {
-		conditionExpression = aws.String("(attribute_not_exists(#pk))")
+	if flags.has(IfNotExists) {
+		builder.condition(fmt.Sprintf("attribute_not_exists(#%v)", pk), pk)
 	}
-	if flags.Has(IfAlreadyExists) {
-		conditionExpression = aws.String("(attribute_exists(#pk))")
+	if flags.has(IfAlreadyExists) {
+		builder.condition(fmt.Sprintf("attribute_exists(#%v)", pk), pk)
 	}
-	if !flags.Has(KeepTTL) && ttl != nil {
-		setClauses = append(setClauses, "#ttl = :ttl")
-		attrRefs = append(attrRefs, "ttl")
-		values[":ttl"] = NumericValue{new(big.Float).SetInt64(ttl.Unix())}.toAV()
+	if !flags.has(KeepTTL) && ttl != nil {
+		builder.SET(fmt.Sprintf("#%v = :%v", tk, tk), tk, NumericValue{new(big.Float).SetInt64(ttl.Unix())}.toAV())
 	}
 
 	_, err = rc.client.UpdateItemRequest(&dynamodb.UpdateItemInput{
-		ConditionExpression:       conditionExpression,
-		ExpressionAttributeNames:  expAttrNames(attrRefs...),
-		ExpressionAttributeValues: values,
-		UpdateExpression:          aws.String("SET " + strings.Join(setClauses, " , ")),
+		ConditionExpression:       builder.conditionExpression(),
+		ExpressionAttributeNames:  builder.expressionAttributeNames(),
+		ExpressionAttributeValues: builder.expressionAttributeValues(),
+		UpdateExpression:          builder.updateExpression(),
 		Key: keyDef{
 			pk: key,
-			sk: "0",
+			sk: defSK,
 		}.toAV(),
 		ReturnValues: "",
 		TableName:    aws.String(rc.table),
@@ -150,7 +143,7 @@ func (rc RedimoClient) MSETNX(data map[string]Value) (ok bool, err error) {
 func (rc RedimoClient) _mset(data map[string]Value, flags Flags) (ok bool, err error) {
 	var inputs []dynamodb.TransactWriteItem
 	var condition *string
-	if flags.Has(IfNotExists) {
+	if flags.has(IfNotExists) {
 		condition = aws.String("(attribute_not_exists(#pk))")
 	}
 	for k, v := range data {

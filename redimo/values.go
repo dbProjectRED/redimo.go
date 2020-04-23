@@ -7,9 +7,9 @@ import (
 )
 
 type Value interface {
-	AsBytes() ([]byte, bool)
-	AsString() (string, bool)
-	AsNumeric() (*big.Float, bool)
+	AsBytes() (b []byte, ok bool)
+	AsString() (s string, ok bool)
+	AsNumeric() (n *big.Float, ok bool)
 	toAV() dynamodb.AttributeValue
 }
 

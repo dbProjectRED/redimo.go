@@ -7,6 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"math/big"
 	"testing"
 )
 
@@ -23,10 +24,27 @@ func TestBasic(t *testing.T) {
 	val, ok, err = rc.GET("hello")
 	assert.NoError(t, err)
 	assert.True(t, ok)
+	assert.NotNil(t, val)
 
 	str, ok := val.AsString()
 	assert.True(t, ok)
 	assert.Equal(t, "world", str)
+
+	ok, err = rc.SETNX("hello", NumericValue{new(big.Float).SetInt64(42)}, nil)
+	assert.False(t, ok)
+	assert.NoError(t, err)
+
+	ok, err = rc.SETNX("hola", NumericValue{new(big.Float).SetInt64(42)}, nil)
+	assert.NoError(t, err)
+	assert.True(t, ok)
+
+	val, ok, err = rc.GET("hola")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	n, ok := val.AsNumeric()
+	assert.True(t, ok)
+	assert.Equal(t, new(big.Float).SetInt64(42), n)
+
 }
 
 func newRedimoClient(t *testing.T) RedimoClient {
@@ -62,7 +80,7 @@ func newConfig(t *testing.T) aws.Config {
 	cfg.EndpointResolver = aws.ResolveWithEndpointURL("http://localhost:8000")
 	cfg.Region = "ap-south-1"
 	cfg.DisableEndpointHostPrefix = true
-	cfg.LogLevel = aws.LogOff
+	cfg.LogLevel = aws.LogDebugWithHTTPBody
 	cfg.Logger = t
 	return cfg
 }

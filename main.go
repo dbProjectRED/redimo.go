@@ -1,7 +1,6 @@
 package main
 
 import (
-	redimo2 "github.com/sudhirj/redimo/redimo"
 	"log"
 	"strings"
 	"sync"
@@ -12,7 +11,7 @@ import (
 var addr = ":6380"
 
 func main() {
-	redimo := redimo2.RedimoClient{}
+	//redimo := redimo2.RedimoClient{}
 	var mu sync.RWMutex
 	var items = make(map[string][]byte)
 	go log.Printf("started server at %s", addr)
@@ -40,15 +39,15 @@ func main() {
 					conn.WriteError("ERR wrong number of arguments for '" + string(cmd.Args[0]) + "' command")
 					return
 				}
-				val, ok, err := redimo.GET(string(cmd.Args[1]))
-				mu.RLock()
-				val, ok := items[string(cmd.Args[1])]
-				mu.RUnlock()
-				if !ok {
-					conn.WriteNull()
-				} else {
-					conn.WriteBulk(val)
-				}
+				//val, ok, err := redimo.GET(string(cmd.Args[1]))
+				//mu.RLock()
+				//val, ok := items[string(cmd.Args[1])]
+				//mu.RUnlock()
+				//if !ok {
+				//	conn.WriteNull()
+				//} else {
+				//	conn.WriteBulk(val)
+				//}
 			case "del":
 				if len(cmd.Args) != 2 {
 					conn.WriteError("ERR wrong number of arguments for '" + string(cmd.Args[0]) + "' command")
