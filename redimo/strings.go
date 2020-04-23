@@ -40,7 +40,8 @@ func (rc RedimoClient) SET(key string, value Value, ttl *time.Time, flags Flags)
 		builder.condition(fmt.Sprintf("attribute_exists(#%v)", pk), pk)
 	}
 	if !flags.has(KeepTTL) && ttl != nil {
-		builder.SET(fmt.Sprintf("#%v = :%v", tk, tk), tk, NumericValue{new(big.Float).SetInt64(ttl.Unix())}.toAV())
+		ttlNum := NumericValue{new(big.Float).SetInt64(ttl.Unix())}
+		builder.SET(fmt.Sprintf("#%v = :%v", tk, tk), tk, ttlNum.toAV())
 	}
 
 	_, err = rc.client.UpdateItemRequest(&dynamodb.UpdateItemInput{
