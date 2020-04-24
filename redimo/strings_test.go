@@ -25,7 +25,6 @@ func TestBasic(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, ok)
 	assert.NotNil(t, val)
-
 	str, ok := val.AsString()
 	assert.True(t, ok)
 	assert.Equal(t, "world", str)
@@ -45,6 +44,20 @@ func TestBasic(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, new(big.Float).SetInt64(42), n)
 
+	ok, err = rc.SET("howdy", StringValue{"partner"}, nil, Flags{IfAlreadyExists})
+	assert.NoError(t, err)
+	assert.False(t, ok)
+
+	ok, err = rc.SET("hola", StringValue{"mundo"}, nil, Flags{IfAlreadyExists})
+	assert.NoError(t, err)
+	assert.True(t, ok)
+
+	val, ok, err = rc.GET("hola")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	str, ok = val.AsString()
+	assert.True(t, ok)
+	assert.Equal(t, "mundo", str)
 }
 
 func newRedimoClient(t *testing.T) RedimoClient {
