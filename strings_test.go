@@ -2,13 +2,14 @@ package redimo
 
 import (
 	"context"
+	"math/big"
+	"testing"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/external"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
-	"math/big"
-	"testing"
 )
 
 func TestBasic(t *testing.T) {
@@ -17,7 +18,7 @@ func TestBasic(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Nil(t, val)
 
-	ok, err := rc.SET("hello", StringValue{"world"}, nil, Flags{})
+	ok, err := rc.SET("hello", StringValue{"world"}, Flags{})
 	assert.NoError(t, err)
 	assert.True(t, ok)
 
@@ -28,11 +29,11 @@ func TestBasic(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, "world", str)
 
-	ok, err = rc.SETNX("hello", NumericValue{new(big.Float).SetInt64(42)}, nil)
+	ok, err = rc.SETNX("hello", NumericValue{new(big.Float).SetInt64(42)})
 	assert.False(t, ok)
 	assert.NoError(t, err)
 
-	ok, err = rc.SETNX("hola", NumericValue{new(big.Float).SetInt64(42)}, nil)
+	ok, err = rc.SETNX("hola", NumericValue{new(big.Float).SetInt64(42)})
 	assert.NoError(t, err)
 	assert.True(t, ok)
 
@@ -43,11 +44,11 @@ func TestBasic(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, new(big.Float).SetInt64(42), n)
 
-	ok, err = rc.SET("howdy", StringValue{"partner"}, nil, Flags{IfAlreadyExists})
+	ok, err = rc.SET("howdy", StringValue{"partner"}, Flags{IfAlreadyExists})
 	assert.NoError(t, err)
 	assert.False(t, ok)
 
-	ok, err = rc.SET("hola", StringValue{"mundo"}, nil, Flags{IfAlreadyExists})
+	ok, err = rc.SET("hola", StringValue{"mundo"}, Flags{IfAlreadyExists})
 	assert.NoError(t, err)
 	assert.True(t, ok)
 
@@ -77,7 +78,7 @@ func TestGETSET(t *testing.T) {
 	assert.Equal(t, "mundo", str)
 }
 
-func newRedimoClient(t *testing.T) RedimoClient {
+func newRedimoClient(t *testing.T) Client {
 	t.Parallel()
 	name := uuid.New().String()
 	dynamoService := dynamodb.New(newConfig(t))
@@ -97,7 +98,7 @@ func newRedimoClient(t *testing.T) RedimoClient {
 		},
 	}).Send(context.TODO())
 	assert.NoError(t, err)
-	return RedimoClient{
+	return Client{
 		client:            dynamoService,
 		strongConsistency: true,
 		table:             name,

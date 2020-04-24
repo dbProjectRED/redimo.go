@@ -2,16 +2,17 @@ package redimo
 
 import (
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/aws/awserr"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"math/big"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/awserr"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
-type RedimoClient struct {
+type Client struct {
 	client            *dynamodb.Client
 	strongConsistency bool
 	table             string

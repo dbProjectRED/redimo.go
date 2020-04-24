@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/awserr"
@@ -12,7 +11,7 @@ import (
 )
 
 // GET conforms to https://redis.io/commands/get
-func (rc RedimoClient) GET(key string) (val Value, err error) {
+func (rc Client) GET(key string) (val Value, err error) {
 	resp, err := rc.client.GetItemRequest(&dynamodb.GetItemInput{
 		ConsistentRead: aws.Bool(rc.strongConsistency),
 		Key:            keyDef{pk: key, sk: defaultSK}.toAV(),
@@ -26,7 +25,7 @@ func (rc RedimoClient) GET(key string) (val Value, err error) {
 }
 
 // SET conforms to https://redis.io/commands/set
-func (rc RedimoClient) SET(key string, value Value, ttl *time.Time, flags Flags) (ok bool, err error) {
+func (rc Client) SET(key string, value Value, flags Flags) (ok bool, err error) {
 	builder := newExpresionBuilder()
 
 	builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, value.toAV())
@@ -36,10 +35,6 @@ func (rc RedimoClient) SET(key string, value Value, ttl *time.Time, flags Flags)
 	}
 	if flags.has(IfAlreadyExists) {
 		builder.condition(fmt.Sprintf("attribute_exists(#%v)", pk), pk)
-	}
-	if !flags.has(KeepTTL) && ttl != nil {
-		ttlNum := NumericValue{new(big.Float).SetInt64(ttl.Unix())}
-		builder.SET(fmt.Sprintf("#%v = :%v", tk, tk), tk, ttlNum.toAV())
 	}
 
 	_, err = rc.client.UpdateItemRequest(&dynamodb.UpdateItemInput{
@@ -63,18 +58,19 @@ func (rc RedimoClient) SET(key string, value Value, ttl *time.Time, flags Flags)
 }
 
 // SETNX conforms to https://redis.io/commands/setnx
-func (rc RedimoClient) SETNX(key string, value Value, ttl *time.Time) (ok bool, err error) {
-	return rc.SET(key, value, ttl, Flags{IfNotExists})
+func (rc Client) SETNX(key string, value Value) (ok bool, err error) {
+	return rc.SET(key, value, Flags{IfNotExists})
 }
 
 // SETEX conforms to https://redis.io/commands/setex
-func (rc RedimoClient) SETEX(key string, value Value, ttl *time.Time) (err error) {
-	_, err = rc.SET(key, value, ttl, Flags{})
+func (rc Client) SETEX(key string, value Value) (err error) {
+	_, err = rc.SET(key, value, Flags{})
 	return
 }
 
 // GETSET https://redis.io/commands/getset
-func (rc RedimoClient) GETSET(key string, value Value) (oldValue Value, err error) {
+func (rc Client) GETSET(key string, value Value) (oldValue Value, err error) {
+	// TODO remove TTL, GETSET seems to require it
 	builder := newExpresionBuilder()
 	builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, value.toAV())
 	resp, err := rc.client.UpdateItemRequest(&dynamodb.UpdateItemInput{
@@ -97,7 +93,7 @@ func (rc RedimoClient) GETSET(key string, value Value) (oldValue Value, err erro
 }
 
 // MGET conforms to https://redis.io/commands/mget
-func (rc RedimoClient) MGET(keys []string) (outputs []Value, err error) {
+func (rc Client) MGET(keys []string) (outputs []Value, err error) {
 	inputRequests := make([]dynamodb.TransactGetItem, len(keys))
 	outputs = make([]Value, len(keys))
 
@@ -131,17 +127,17 @@ func (rc RedimoClient) MGET(keys []string) (outputs []Value, err error) {
 }
 
 // MSET conforms to https://redis.io/commands/mset
-func (rc RedimoClient) MSET(data map[string]Value) (err error) {
+func (rc Client) MSET(data map[string]Value) (err error) {
 	_, err = rc._mset(data, Flags{})
 	return
 }
 
 // MSETNX conforms to https://redis.io/commands/msetnx
-func (rc RedimoClient) MSETNX(data map[string]Value) (ok bool, err error) {
+func (rc Client) MSETNX(data map[string]Value) (ok bool, err error) {
 	return rc._mset(data, Flags{IfNotExists})
 }
 
-func (rc RedimoClient) _mset(data map[string]Value, flags Flags) (ok bool, err error) {
+func (rc Client) _mset(data map[string]Value, flags Flags) (ok bool, err error) {
 	var inputs []dynamodb.TransactWriteItem
 	var condition *string
 	if flags.has(IfNotExists) {
@@ -183,7 +179,7 @@ func (rc RedimoClient) _mset(data map[string]Value, flags Flags) (ok bool, err e
 }
 
 // INCRBYFLOAT https://redis.io/commands/incrbyfloat
-func (rc RedimoClient) INCRBYFLOAT(key string, delta *big.Float) (after *big.Float, err error) {
+func (rc Client) INCRBYFLOAT(key string, delta *big.Float) (after *big.Float, err error) {
 	resp, err := rc.client.UpdateItemRequest(&dynamodb.UpdateItemInput{
 		ExpressionAttributeNames: expressionAttributeNames,
 		ExpressionAttributeValues: map[string]dynamodb.AttributeValue{
@@ -201,7 +197,7 @@ func (rc RedimoClient) INCRBYFLOAT(key string, delta *big.Float) (after *big.Flo
 }
 
 // INCR https://redis.io/commands/incr
-func (rc RedimoClient) INCR(key string) (after *big.Int, err error) {
+func (rc Client) INCR(key string) (after *big.Int, err error) {
 	floatAfter, err := rc.INCRBYFLOAT(key, big.NewFloat(1.0))
 	if err == nil {
 		floatAfter.Int(after)
@@ -210,7 +206,7 @@ func (rc RedimoClient) INCR(key string) (after *big.Int, err error) {
 }
 
 // DECR https://redis.io/commands/decr
-func (rc RedimoClient) DECR(key string) (after *big.Int, err error) {
+func (rc Client) DECR(key string) (after *big.Int, err error) {
 	floatAfter, err := rc.INCRBYFLOAT(key, big.NewFloat(-1.0))
 	if err == nil {
 		floatAfter.Int(after)
@@ -219,7 +215,7 @@ func (rc RedimoClient) DECR(key string) (after *big.Int, err error) {
 }
 
 // INRCBY https://redis.io/commands/incrby
-func (rc RedimoClient) INCRBY(key string, delta *big.Int) (after *big.Int, err error) {
+func (rc Client) INCRBY(key string, delta *big.Int) (after *big.Int, err error) {
 	floatAfter, err := rc.INCRBYFLOAT(key, new(big.Float).SetInt(delta))
 	if err == nil {
 		floatAfter.Int(after)
@@ -228,7 +224,7 @@ func (rc RedimoClient) INCRBY(key string, delta *big.Int) (after *big.Int, err e
 }
 
 // DECRBY https://redis.io/commands/decrby
-func (rc RedimoClient) DECRBY(key string, delta *big.Int) (after *big.Int, err error) {
+func (rc Client) DECRBY(key string, delta *big.Int) (after *big.Int, err error) {
 	floatAfter, err := rc.INCRBYFLOAT(key, new(big.Float).SetInt(new(big.Int).Neg(delta)))
 	if err == nil {
 		floatAfter.Int(after)
