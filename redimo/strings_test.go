@@ -13,17 +13,16 @@ import (
 
 func TestBasic(t *testing.T) {
 	rc := newRedimoClient(t)
-	val, ok, err := rc.GET("hello")
+	val, err := rc.GET("hello")
 	assert.NoError(t, err)
-	assert.False(t, ok)
+	assert.Nil(t, val)
 
-	ok, err = rc.SET("hello", StringValue{"world"}, nil, Flags{})
+	ok, err := rc.SET("hello", StringValue{"world"}, nil, Flags{})
 	assert.NoError(t, err)
 	assert.True(t, ok)
 
-	val, ok, err = rc.GET("hello")
+	val, err = rc.GET("hello")
 	assert.NoError(t, err)
-	assert.True(t, ok)
 	assert.NotNil(t, val)
 	str, ok := val.AsString()
 	assert.True(t, ok)
@@ -37,9 +36,9 @@ func TestBasic(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, ok)
 
-	val, ok, err = rc.GET("hola")
+	val, err = rc.GET("hola")
 	assert.NoError(t, err)
-	assert.True(t, ok)
+	assert.NotNil(t, val)
 	n, ok := val.AsNumeric()
 	assert.True(t, ok)
 	assert.Equal(t, new(big.Float).SetInt64(42), n)
@@ -52,15 +51,34 @@ func TestBasic(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, ok)
 
-	val, ok, err = rc.GET("hola")
+	val, err = rc.GET("hola")
 	assert.NoError(t, err)
-	assert.True(t, ok)
+	assert.NotNil(t, val)
 	str, ok = val.AsString()
 	assert.True(t, ok)
 	assert.Equal(t, "mundo", str)
 }
 
+func TestGETSET(t *testing.T) {
+	rc := newRedimoClient(t)
+	oldValue, err := rc.GETSET("hello", StringValue{"world"})
+	assert.NoError(t, err)
+	assert.Nil(t, oldValue)
+
+	oldValue, err = rc.GETSET("hello", StringValue{"mundo"})
+	assert.NoError(t, err)
+	assert.NotNil(t, oldValue)
+	str, ok := oldValue.AsString()
+	assert.True(t, ok)
+	assert.Equal(t, "world", str)
+
+	val, _ := rc.GET("hello")
+	str, _ = val.AsString()
+	assert.Equal(t, "mundo", str)
+}
+
 func newRedimoClient(t *testing.T) RedimoClient {
+	t.Parallel()
 	name := uuid.New().String()
 	dynamoService := dynamodb.New(newConfig(t))
 	_, err := dynamoService.CreateTableRequest(&dynamodb.CreateTableInput{
@@ -93,7 +111,7 @@ func newConfig(t *testing.T) aws.Config {
 	cfg.EndpointResolver = aws.ResolveWithEndpointURL("http://localhost:8000")
 	cfg.Region = "ap-south-1"
 	cfg.DisableEndpointHostPrefix = true
-	cfg.LogLevel = aws.LogDebugWithHTTPBody
+	cfg.LogLevel = aws.LogOff
 	cfg.Logger = t
 	return cfg
 }

@@ -3,10 +3,12 @@ package redimo
 import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/awserr"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"math/big"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type RedimoClient struct {
@@ -19,36 +21,36 @@ const pk = "pk"
 const sk = "sk"
 const vk = "val"
 const tk = "ttl"
-const defSK = "."
+const defaultSK = "."
 
-type expressionBuider struct {
+type expressionBuilder struct {
 	conditions []string
 	clauses    map[string][]string
 	keys       map[string]struct{}
 	values     map[string]dynamodb.AttributeValue
 }
 
-func (b *expressionBuider) SET(clause string, key string, val dynamodb.AttributeValue) {
+func (b *expressionBuilder) SET(clause string, key string, val dynamodb.AttributeValue) {
 	b.clauses["SET"] = append(b.clauses["SET"], clause)
 	b.keys[key] = struct{}{}
 	b.values[key] = val
 }
 
-func (b *expressionBuider) condition(condition string, refs ...string) {
+func (b *expressionBuilder) condition(condition string, references ...string) {
 	b.conditions = append(b.conditions, condition)
-	for _, ref := range refs {
+	for _, ref := range references {
 		b.keys[ref] = struct{}{}
 	}
 }
 
-func (b *expressionBuider) conditionExpression() *string {
+func (b *expressionBuilder) conditionExpression() *string {
 	if len(b.conditions) == 0 {
 		return nil
 	}
 	return aws.String(strings.Join(b.conditions, ","))
 }
 
-func (b *expressionBuider) expressionAttributeNames() map[string]string {
+func (b *expressionBuilder) expressionAttributeNames() map[string]string {
 	if len(b.keys) == 0 {
 		return nil
 	}
@@ -59,7 +61,7 @@ func (b *expressionBuider) expressionAttributeNames() map[string]string {
 	return out
 }
 
-func (b *expressionBuider) expressionAttributeValues() map[string]dynamodb.AttributeValue {
+func (b *expressionBuilder) expressionAttributeValues() map[string]dynamodb.AttributeValue {
 	if len(b.values) == 0 {
 		return nil
 	}
@@ -70,7 +72,7 @@ func (b *expressionBuider) expressionAttributeValues() map[string]dynamodb.Attri
 	return out
 }
 
-func (b *expressionBuider) updateExpression() *string {
+func (b *expressionBuilder) updateExpression() *string {
 	if len(b.clauses) == 0 {
 		return nil
 	}
@@ -81,69 +83,18 @@ func (b *expressionBuider) updateExpression() *string {
 	return aws.String(strings.Join(clauses, " "))
 }
 
-func newExpresionBuilder() expressionBuider {
-	return expressionBuider{
+func (b *expressionBuilder) addValue(k string, v dynamodb.AttributeValue) {
+	b.keys[k] = struct{}{}
+	b.values[k] = v
+}
+
+func newExpresionBuilder() expressionBuilder {
+	return expressionBuilder{
 		conditions: []string{},
 		clauses:    make(map[string][]string),
 		keys:       make(map[string]struct{}),
 		values:     make(map[string]dynamodb.AttributeValue),
 	}
-}
-
-type attributeValueMap map[string]dynamodb.AttributeValue
-
-func (am attributeValueMap) set(k string, v dynamodb.AttributeValue) {
-	am[":"+k] = v
-}
-
-func (am attributeValueMap) toMap() map[string]dynamodb.AttributeValue {
-	if len(am) == 0 {
-		return nil
-	}
-	return am
-}
-
-type attributeNameSet map[string]struct{}
-
-func (as attributeNameSet) add(n string) {
-	as[n] = struct{}{}
-}
-
-func (as attributeNameSet) toMap() map[string]string {
-	if len(as) == 0 {
-		return nil
-	}
-	out := make(map[string]string)
-	for k, _ := range as {
-		out["#"+k] = k
-	}
-	return out
-}
-
-type clauseList struct {
-	list []string
-}
-
-func (cs *clauseList) add(clause string) {
-	cs.list = append(cs.list, clause)
-}
-
-func (cs *clauseList) SET() *string {
-	if len(cs.list) > 0 {
-		return aws.String("SET " + strings.Join(cs.list, " , "))
-	}
-	return nil
-}
-
-func (cs *clauseList) COND() *string {
-	if len(cs.list) > 0 {
-		return aws.String(strings.Join(cs.list, " , "))
-	}
-	return nil
-}
-
-func sf(format string, values ...interface{}) string {
-	return fmt.Sprintf(format, values...)
 }
 
 var expressionAttributeNames = map[string]string{
@@ -174,23 +125,23 @@ type itemDef struct {
 	keyDef
 	val   Value
 	score float64
-	ttl   int64
+	ttl   *time.Time
 }
 
 func (i itemDef) eav() map[string]dynamodb.AttributeValue {
 	eav := make(map[string]dynamodb.AttributeValue)
-	eav[":val"] = i.val.toAV()
+	eav["val"] = i.val.toAV()
 
 	// Can't check if scores or ttl are nil, just assign them, the operation can choose to ignore the score if not applicable
-	eav[":score"] = dynamodb.AttributeValue{
+	eav["score"] = dynamodb.AttributeValue{
 		N: aws.String(fmt.Sprintf("%g", i.score)),
 	}
-	if i.ttl > 0 {
-		eav[":ttl"] = dynamodb.AttributeValue{
-			N: aws.String(strconv.Itoa(int(i.ttl))),
+	if i.ttl != nil {
+		eav["ttl"] = dynamodb.AttributeValue{
+			N: aws.String(strconv.Itoa(int(i.ttl.Unix()))),
 		}
 	} else {
-		eav[":ttl"] = dynamodb.AttributeValue{
+		eav["ttl"] = dynamodb.AttributeValue{
 			NULL: aws.Bool(true),
 		}
 	}
@@ -211,7 +162,9 @@ func parseItem(avm map[string]dynamodb.AttributeValue) (item itemDef) {
 		item.score, _ = strconv.ParseFloat(aws.StringValue(avm["score"].N), 64)
 	}
 	if avm["ttl"].N != nil {
-		item.ttl, _ = strconv.ParseInt(aws.StringValue(avm["ttl"].N), 10, 64)
+		ttlInt, _ := strconv.ParseInt(aws.StringValue(avm["ttl"].N), 10, 64)
+		ut := time.Unix(ttlInt, 0)
+		item.ttl = &ut
 	}
 
 	if avm["val"].N != nil {
@@ -239,6 +192,19 @@ type Flags []Flag
 func (flags Flags) has(flag Flag) bool {
 	for _, f := range flags {
 		if f == flag {
+			return true
+		}
+	}
+	return false
+}
+
+func conditionFailureError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if aerr, ok := err.(awserr.Error); ok {
+		switch aerr.Code() {
+		case dynamodb.ErrCodeConditionalCheckFailedException:
 			return true
 		}
 	}

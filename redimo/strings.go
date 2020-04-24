@@ -3,27 +3,25 @@ package redimo
 import (
 	"context"
 	"fmt"
+	"math/big"
+	"time"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/awserr"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"math/big"
-	"time"
 )
 
 // GET conforms to https://redis.io/commands/get
-func (rc RedimoClient) GET(key string) (val Value, ok bool, err error) {
+func (rc RedimoClient) GET(key string) (val Value, err error) {
 	resp, err := rc.client.GetItemRequest(&dynamodb.GetItemInput{
 		ConsistentRead: aws.Bool(rc.strongConsistency),
-		Key:            keyDef{pk: key, sk: defSK}.toAV(),
+		Key:            keyDef{pk: key, sk: defaultSK}.toAV(),
 		TableName:      aws.String(rc.table),
 	}).Send(context.TODO())
 	if err != nil || len(resp.Item) == 0 {
 		return
 	}
-
-	ok = true
 	val = parseItem(resp.Item).val
-
 	return
 }
 
@@ -51,18 +49,14 @@ func (rc RedimoClient) SET(key string, value Value, ttl *time.Time, flags Flags)
 		UpdateExpression:          builder.updateExpression(),
 		Key: keyDef{
 			pk: key,
-			sk: defSK,
+			sk: defaultSK,
 		}.toAV(),
-		ReturnValues: "",
-		TableName:    aws.String(rc.table),
+		TableName: aws.String(rc.table),
 	}).Send(context.TODO())
+	if conditionFailureError(err) {
+		return false, nil
+	}
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			switch aerr.Code() {
-			case dynamodb.ErrCodeConditionalCheckFailedException:
-				return false, nil
-			}
-		}
 		return
 	}
 	return true, nil
@@ -81,18 +75,24 @@ func (rc RedimoClient) SETEX(key string, value Value, ttl *time.Time) (err error
 
 // GETSET https://redis.io/commands/getset
 func (rc RedimoClient) GETSET(key string, value Value) (oldValue Value, err error) {
-	resp, err := rc.client.PutItemRequest(&dynamodb.PutItemInput{
-		ExpressionAttributeNames: expressionAttributeNames,
-		ExpressionAttributeValues: map[string]dynamodb.AttributeValue{
-			":val": value.toAV(),
-		},
-		Item:         keyDef{pk: key, sk: "0"}.toAV(),
+	builder := newExpresionBuilder()
+	builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, value.toAV())
+	resp, err := rc.client.UpdateItemRequest(&dynamodb.UpdateItemInput{
+		ConditionExpression:       builder.conditionExpression(),
+		ExpressionAttributeNames:  builder.expressionAttributeNames(),
+		ExpressionAttributeValues: builder.expressionAttributeValues(),
+		UpdateExpression:          builder.updateExpression(),
+		Key: keyDef{
+			pk: key,
+			sk: defaultSK,
+		}.toAV(),
 		ReturnValues: dynamodb.ReturnValueAllOld,
 		TableName:    aws.String(rc.table),
 	}).Send(context.TODO())
-	if err == nil {
-		oldValue = parseItem(resp.PutItemOutput.Attributes).val
+	if err != nil || len(resp.Attributes) == 0 {
+		return
 	}
+	oldValue = parseItem(resp.Attributes).val
 	return
 }
 
