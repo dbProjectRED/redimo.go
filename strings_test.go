@@ -106,6 +106,13 @@ func TestCounters(t *testing.T) {
 	assert.NoError(t, err)
 	f, _ = num.Float64()
 	assert.InDelta(t, 20, f, 0.01)
+
+	v, err := c.GET("count")
+	assert.NoError(t, err)
+	numeric, ok := v.AsNumeric()
+	assert.True(t, ok)
+	f, _ = numeric.Float64()
+	assert.InDelta(t, 20, f, 0.001)
 }
 
 func newClient(t *testing.T) Client {
