@@ -174,12 +174,14 @@ func (rc Client) _mset(data map[string]Value, flags Flags) (ok bool, err error) 
 
 // INCRBYFLOAT https://redis.io/commands/incrbyfloat
 func (rc Client) INCRBYFLOAT(key string, delta *big.Float) (after *big.Float, err error) {
+	builder := newExpresionBuilder()
+	builder.keys[vk] = struct{}{}
 	resp, err := rc.client.UpdateItemRequest(&dynamodb.UpdateItemInput{
-		ExpressionAttributeNames: expressionAttributeNames,
+		ExpressionAttributeNames: builder.expressionAttributeNames(),
 		ExpressionAttributeValues: map[string]dynamodb.AttributeValue{
 			":delta": NumericValue{delta}.toAV(),
 		},
-		Key:              keyDef{pk: key, sk: "0"}.toAV(),
+		Key:              keyDef{pk: key, sk: defaultSK}.toAV(),
 		ReturnValues:     dynamodb.ReturnValueAllNew,
 		TableName:        aws.String(rc.table),
 		UpdateExpression: aws.String("ADD #val :delta"),
@@ -190,38 +192,30 @@ func (rc Client) INCRBYFLOAT(key string, delta *big.Float) (after *big.Float, er
 	return
 }
 
-// INCR https://redis.io/commands/incr
-func (rc Client) INCR(key string) (after *big.Int, err error) {
-	floatAfter, err := rc.INCRBYFLOAT(key, big.NewFloat(1.0))
+func (rc Client) _incrByInt(key string, delta *big.Int) (after *big.Int, err error) {
+	floatAfter, err := rc.INCRBYFLOAT(key, new(big.Float).SetInt(delta))
 	if err == nil {
-		floatAfter.Int(after)
+		after, _ = floatAfter.Int(nil)
 	}
 	return
+}
+
+// INCR https://redis.io/commands/incr
+func (rc Client) INCR(key string) (after *big.Int, err error) {
+	return rc._incrByInt(key, big.NewInt(1))
 }
 
 // DECR https://redis.io/commands/decr
 func (rc Client) DECR(key string) (after *big.Int, err error) {
-	floatAfter, err := rc.INCRBYFLOAT(key, big.NewFloat(-1.0))
-	if err == nil {
-		floatAfter.Int(after)
-	}
-	return
+	return rc._incrByInt(key, big.NewInt(-1))
 }
 
 // INRCBY https://redis.io/commands/incrby
 func (rc Client) INCRBY(key string, delta *big.Int) (after *big.Int, err error) {
-	floatAfter, err := rc.INCRBYFLOAT(key, new(big.Float).SetInt(delta))
-	if err == nil {
-		floatAfter.Int(after)
-	}
-	return
+	return rc._incrByInt(key, delta)
 }
 
 // DECRBY https://redis.io/commands/decrby
 func (rc Client) DECRBY(key string, delta *big.Int) (after *big.Int, err error) {
-	floatAfter, err := rc.INCRBYFLOAT(key, new(big.Float).SetInt(new(big.Int).Neg(delta)))
-	if err == nil {
-		floatAfter.Int(after)
-	}
-	return
+	return rc._incrByInt(key, new(big.Int).Neg(delta))
 }

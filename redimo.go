@@ -81,11 +81,6 @@ func (b *expressionBuilder) updateExpression() *string {
 	return aws.String(strings.Join(clauses, " "))
 }
 
-func (b *expressionBuilder) addValue(k string, v dynamodb.AttributeValue) {
-	b.keys[k] = struct{}{}
-	b.values[k] = v
-}
-
 func newExpresionBuilder() expressionBuilder {
 	return expressionBuilder{
 		conditions: []string{},
