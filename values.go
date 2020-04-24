@@ -1,9 +1,10 @@
 package redimo
 
 import (
+	"math/big"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"math/big"
 )
 
 type Value interface {

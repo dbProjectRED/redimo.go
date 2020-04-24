@@ -1,11 +1,9 @@
 package redimo
 
 import (
-	"fmt"
 	"math/big"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/awserr"
@@ -21,7 +19,6 @@ type Client struct {
 const pk = "pk"
 const sk = "sk"
 const vk = "val"
-const tk = "ttl"
 const defaultSK = "."
 
 type expressionBuilder struct {
@@ -126,27 +123,11 @@ type itemDef struct {
 	keyDef
 	val   Value
 	score float64
-	ttl   *time.Time
 }
 
 func (i itemDef) eav() map[string]dynamodb.AttributeValue {
 	eav := make(map[string]dynamodb.AttributeValue)
-	eav["val"] = i.val.toAV()
-
-	// Can't check if scores or ttl are nil, just assign them, the operation can choose to ignore the score if not applicable
-	eav["score"] = dynamodb.AttributeValue{
-		N: aws.String(fmt.Sprintf("%g", i.score)),
-	}
-	if i.ttl != nil {
-		eav["ttl"] = dynamodb.AttributeValue{
-			N: aws.String(strconv.Itoa(int(i.ttl.Unix()))),
-		}
-	} else {
-		eav["ttl"] = dynamodb.AttributeValue{
-			NULL: aws.Bool(true),
-		}
-	}
-
+	eav[vk] = i.val.toAV()
 	return eav
 }
 
@@ -162,12 +143,6 @@ func parseItem(avm map[string]dynamodb.AttributeValue) (item itemDef) {
 	if avm["score"].N != nil {
 		item.score, _ = strconv.ParseFloat(aws.StringValue(avm["score"].N), 64)
 	}
-	if avm["ttl"].N != nil {
-		ttlInt, _ := strconv.ParseInt(aws.StringValue(avm["ttl"].N), 10, 64)
-		ut := time.Unix(ttlInt, 0)
-		item.ttl = &ut
-	}
-
 	if avm["val"].N != nil {
 		num, _, _ := new(big.Float).Parse(aws.StringValue(avm["val"].N), 10)
 		item.val = NumericValue{bf: num}
@@ -185,7 +160,6 @@ type Flag string
 const (
 	IfAlreadyExists Flag = "XX"
 	IfNotExists     Flag = "NX"
-	KeepTTL         Flag = "KEEPTTL"
 )
 
 type Flags []Flag

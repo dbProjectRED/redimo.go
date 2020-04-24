@@ -62,12 +62,6 @@ func (rc Client) SETNX(key string, value Value) (ok bool, err error) {
 	return rc.SET(key, value, Flags{IfNotExists})
 }
 
-// SETEX conforms to https://redis.io/commands/setex
-func (rc Client) SETEX(key string, value Value) (err error) {
-	_, err = rc.SET(key, value, Flags{})
-	return
-}
-
 // GETSET https://redis.io/commands/getset
 func (rc Client) GETSET(key string, value Value) (oldValue Value, err error) {
 	// TODO remove TTL, GETSET seems to require it
