@@ -58,3 +58,51 @@ func (c Client) HSET(key string, fieldValues map[string]Value) (savedCount int64
 
 	return
 }
+
+func (c Client) HMSET(key string, fieldValues map[string]Value) (err error) {
+	var items []dynamodb.TransactWriteItem
+	for field, v := range fieldValues {
+		builder := newExpresionBuilder()
+		builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, v.toAV())
+		items = append(items, dynamodb.TransactWriteItem{
+			Update: &dynamodb.Update{
+				ConditionExpression:       builder.conditionExpression(),
+				ExpressionAttributeNames:  builder.expressionAttributeNames(),
+				ExpressionAttributeValues: builder.expressionAttributeValues(),
+				Key: keyDef{
+					pk: key,
+					sk: field,
+				}.toAV(),
+				TableName:        aws.String(c.table),
+				UpdateExpression: builder.updateExpression(),
+			},
+		})
+	}
+	_, err = c.client.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
+		TransactItems: items,
+	}).Send(context.TODO())
+	return
+}
+
+func (c Client) HMGET(key string, fields ...string) (values []Value, err error) {
+	var items []dynamodb.TransactGetItem
+	for _, field := range fields {
+		items = append(items, dynamodb.TransactGetItem{Get: &dynamodb.Get{
+			Key: keyDef{
+				pk: key,
+				sk: field,
+			}.toAV(),
+			ProjectionExpression: aws.String(vk),
+			TableName:            aws.String(c.table),
+		}})
+	}
+	resp, err := c.client.TransactGetItemsRequest(&dynamodb.TransactGetItemsInput{
+		TransactItems: items,
+	}).Send(context.TODO())
+	if err == nil {
+		for _, r := range resp.Responses {
+			values = append(values, parseItem(r.Item).val)
+		}
+	}
+	return
+}

@@ -117,7 +117,7 @@ func TestAtomicOps(t *testing.T) {
 		"k3": StringValue{"v3"},
 	})
 	assert.NoError(t, err)
-	values, err := c.MGET([]string{"k1", "k2", "k3"})
+	values, err := c.MGET([]string{"k1", "k2", "k3"}...)
 	assert.NoError(t, err)
 	assert.Equal(t, []Value{StringValue{"v1"}, StringValue{"v2"}, StringValue{"v3"}}, values)
 
@@ -128,19 +128,19 @@ func TestAtomicOps(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, StringValue{"v3.1"}, v)
 
-	values, err = c.MGET([]string{"k3", "k4"})
+	values, err = c.MGET("k3", "k4")
 	assert.NoError(t, err)
 	assert.Equal(t, []Value{StringValue{"v3.1"}, StringValue{"v4"}}, values)
 
 	ok, err := c.MSETNX(map[string]Value{"k3": StringValue{"v3.2"}, "k5": StringValue{"v5"}})
 	assert.NoError(t, err)
 	assert.False(t, ok)
-	values, err = c.MGET([]string{"k3", "k5"})
+	values, err = c.MGET([]string{"k3", "k5"}...)
 	assert.Equal(t, []Value{StringValue{"v3.1"}, nil}, values)
 
 	ok, err = c.MSETNX(map[string]Value{"k5": StringValue{"v5"}, "k6": StringValue{"v6"}})
 	assert.NoError(t, err)
 	assert.True(t, ok)
-	values, err = c.MGET([]string{"k5", "k6"})
+	values, err = c.MGET("k5", "k6")
 	assert.Equal(t, []Value{StringValue{"v5"}, StringValue{"v6"}}, values)
 }

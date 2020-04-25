@@ -86,7 +86,7 @@ func (c Client) GETSET(key string, value Value) (oldValue Value, err error) {
 }
 
 // MGET conforms to https://redis.io/commands/mget
-func (c Client) MGET(keys []string) (outputs []Value, err error) {
+func (c Client) MGET(keys ...string) (outputs []Value, err error) {
 	inputRequests := make([]dynamodb.TransactGetItem, len(keys))
 	outputs = make([]Value, len(keys))
 
