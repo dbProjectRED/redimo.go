@@ -2,7 +2,6 @@ package redimo
 
 import (
 	"math/big"
-	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -11,9 +10,9 @@ import (
 )
 
 type Client struct {
-	client            *dynamodb.Client
-	strongConsistency bool
-	table             string
+	client          *dynamodb.Client
+	consistentReads bool
+	table           string
 }
 
 const pk = "pk"
@@ -90,14 +89,6 @@ func newExpresionBuilder() expressionBuilder {
 	}
 }
 
-var expressionAttributeNames = map[string]string{
-	"#pk":    "pk",
-	"#sk":    "sk",
-	"#val":   "val",
-	"#ttl":   "ttl",
-	"#score": "score",
-}
-
 type keyDef struct {
 	pk string
 	sk string
@@ -121,30 +112,27 @@ type itemDef struct {
 }
 
 func (i itemDef) eav() map[string]dynamodb.AttributeValue {
-	eav := make(map[string]dynamodb.AttributeValue)
+	eav := i.keyDef.toAV()
 	eav[vk] = i.val.toAV()
 	return eav
 }
 
 func parseKey(avm map[string]dynamodb.AttributeValue) keyDef {
 	return keyDef{
-		pk: aws.StringValue(avm["pk"].S),
-		sk: aws.StringValue(avm["sk"].S),
+		pk: aws.StringValue(avm[pk].S),
+		sk: aws.StringValue(avm[sk].S),
 	}
 }
 
 func parseItem(avm map[string]dynamodb.AttributeValue) (item itemDef) {
 	item.keyDef = parseKey(avm)
-	if avm["score"].N != nil {
-		item.score, _ = strconv.ParseFloat(aws.StringValue(avm["score"].N), 64)
-	}
-	if avm["val"].N != nil {
-		num, _, _ := new(big.Float).Parse(aws.StringValue(avm["val"].N), 10)
+	if avm[vk].N != nil {
+		num, _, _ := new(big.Float).Parse(aws.StringValue(avm[vk].N), 10)
 		item.val = NumericValue{bf: num}
-	} else if avm["val"].S != nil {
-		item.val = StringValue{str: aws.StringValue(avm["val"].S)}
-	} else if avm["val"].B != nil {
-		item.val = BytesValue{bytes: avm["val"].B}
+	} else if avm[vk].S != nil {
+		item.val = StringValue{str: aws.StringValue(avm[vk].S)}
+	} else if avm[vk].B != nil {
+		item.val = BytesValue{bytes: avm[vk].B}
 	}
 
 	return
