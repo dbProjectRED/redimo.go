@@ -174,7 +174,10 @@ func conditionFailureError(err error) bool {
 	}
 	if aerr, ok := err.(awserr.Error); ok {
 		switch aerr.Code() {
-		case dynamodb.ErrCodeConditionalCheckFailedException:
+		case dynamodb.ErrCodeConditionalCheckFailedException,
+			dynamodb.ErrCodeTransactionInProgressException,
+			dynamodb.ErrCodeTransactionConflictException,
+			dynamodb.ErrCodeTransactionCanceledException:
 			return true
 		}
 	}

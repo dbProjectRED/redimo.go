@@ -115,6 +115,42 @@ func TestCounters(t *testing.T) {
 	assert.InDelta(t, 20, f, 0.001)
 }
 
+func TestAtomicOps(t *testing.T) {
+	c := newClient(t)
+	err := c.MSET(map[string]Value{
+		"k1": StringValue{"v1"},
+		"k2": StringValue{"v2"},
+		"k3": StringValue{"v3"},
+	})
+	assert.NoError(t, err)
+	values, err := c.MGET([]string{"k1", "k2", "k3"})
+	assert.NoError(t, err)
+	assert.Equal(t, []Value{StringValue{"v1"}, StringValue{"v2"}, StringValue{"v3"}}, values)
+
+	err = c.MSET(map[string]Value{"k3": StringValue{"v3.1"}, "k4": StringValue{"v4"}})
+	assert.NoError(t, err)
+
+	v, err := c.GET("k3")
+	assert.NoError(t, err)
+	assert.Equal(t, StringValue{"v3.1"}, v)
+
+	values, err = c.MGET([]string{"k3", "k4"})
+	assert.NoError(t, err)
+	assert.Equal(t, []Value{StringValue{"v3.1"}, StringValue{"v4"}}, values)
+
+	ok, err := c.MSETNX(map[string]Value{"k3": StringValue{"v3.2"}, "k5": StringValue{"v5"}})
+	assert.NoError(t, err)
+	assert.False(t, ok)
+	values, err = c.MGET([]string{"k3", "k5"})
+	assert.Equal(t, []Value{StringValue{"v3.1"}, nil}, values)
+
+	ok, err = c.MSETNX(map[string]Value{"k5": StringValue{"v5"}, "k6": StringValue{"v6"}})
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	values, err = c.MGET([]string{"k5", "k6"})
+	assert.Equal(t, []Value{StringValue{"v5"}, StringValue{"v6"}}, values)
+}
+
 func newClient(t *testing.T) Client {
 	t.Parallel()
 	name := uuid.New().String()

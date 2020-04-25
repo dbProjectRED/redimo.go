@@ -6,7 +6,6 @@ import (
 	"math/big"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/aws/awserr"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
@@ -91,18 +90,17 @@ func (rc Client) MGET(keys []string) (outputs []Value, err error) {
 	inputRequests := make([]dynamodb.TransactGetItem, len(keys))
 	outputs = make([]Value, len(keys))
 
-	for _, key := range keys {
-		inputRequests = append(inputRequests, dynamodb.TransactGetItem{
+	for i, key := range keys {
+		inputRequests[i] = dynamodb.TransactGetItem{
 			Get: &dynamodb.Get{
-				ExpressionAttributeNames: expressionAttributeNames,
 				Key: keyDef{
 					pk: key,
-					sk: "0",
+					sk: defaultSK,
 				}.toAV(),
-				ProjectionExpression: aws.String("#val"),
+				ProjectionExpression: aws.String(vk),
 				TableName:            aws.String(rc.table),
 			},
-		})
+		}
 	}
 	resp, err := rc.client.TransactGetItemsRequest(&dynamodb.TransactGetItemsInput{
 		TransactItems: inputRequests,
@@ -110,11 +108,11 @@ func (rc Client) MGET(keys []string) (outputs []Value, err error) {
 	if err != nil {
 		return
 	}
-	for _, out := range resp.Responses {
+	for i, out := range resp.Responses {
 		if len(out.Item) > 0 {
-			outputs = append(outputs, parseItem(out.Item).val)
+			outputs[i] = parseItem(out.Item).val
 		} else {
-			outputs = append(outputs, nil)
+			outputs[i] = nil
 		}
 	}
 	return
@@ -133,23 +131,26 @@ func (rc Client) MSETNX(data map[string]Value) (ok bool, err error) {
 
 func (rc Client) _mset(data map[string]Value, flags Flags) (ok bool, err error) {
 	var inputs []dynamodb.TransactWriteItem
-	var condition *string
-	if flags.has(IfNotExists) {
-		condition = aws.String("(attribute_not_exists(#pk))")
-	}
+
 	for k, v := range data {
+		builder := newExpresionBuilder()
+
+		if flags.has(IfNotExists) {
+			builder.condition(fmt.Sprintf("(attribute_not_exists(#%v))", pk), pk)
+		}
+
+		builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, v.toAV())
 		inputs = append(inputs, dynamodb.TransactWriteItem{
-			Put: &dynamodb.Put{
-				ConditionExpression:      condition,
-				ExpressionAttributeNames: expressionAttributeNames,
-				Item: itemDef{
-					keyDef: keyDef{
-						pk: k,
-						sk: "0",
-					},
-					val: v,
+			Update: &dynamodb.Update{
+				ConditionExpression:       builder.conditionExpression(),
+				ExpressionAttributeNames:  builder.expressionAttributeNames(),
+				ExpressionAttributeValues: builder.expressionAttributeValues(),
+				Key: keyDef{
+					pk: k,
+					sk: defaultSK,
 				}.toAV(),
-				TableName: aws.String(rc.table),
+				TableName:        aws.String(rc.table),
+				UpdateExpression: builder.updateExpression(),
 			},
 		})
 	}
@@ -157,17 +158,11 @@ func (rc Client) _mset(data map[string]Value, flags Flags) (ok bool, err error) 
 		ClientRequestToken: nil,
 		TransactItems:      inputs,
 	}).Send(context.TODO())
+	if conditionFailureError(err) {
+		return false, nil
+	}
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			switch aerr.Code() {
-			case dynamodb.ErrCodeConditionalCheckFailedException,
-				dynamodb.ErrCodeTransactionInProgressException,
-				dynamodb.ErrCodeTransactionConflictException,
-				dynamodb.ErrCodeTransactionCanceledException:
-				return false, nil
-			}
-		}
-		return
+		return false, err
 	}
 	return true, nil
 }
