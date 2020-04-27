@@ -131,3 +131,19 @@ func (c Client) HDEL(key string, fields ...string) (err error) {
 	}
 	return
 }
+
+func (c Client) HEXISTS(key string, field string) (exists bool, err error) {
+	resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
+		ConsistentRead: aws.Bool(c.consistentReads),
+		Key: keyDef{
+			pk: key,
+			sk: field,
+		}.toAV(),
+		ProjectionExpression: aws.String(strings.Join([]string{pk}, ", ")),
+		TableName:            aws.String(c.table),
+	}).Send(context.TODO())
+	if err == nil && len(resp.Item) > 0 {
+		exists = true
+	}
+	return
+}

@@ -19,6 +19,10 @@ func TestBasicHashes(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, StringValue{"v2"}, val)
 
+	exists, err := c.HEXISTS("k1", "f2")
+	assert.NoError(t, err)
+	assert.True(t, exists)
+
 	val, err = c.HGET("nosuchkey", "no such field")
 	assert.NoError(t, err)
 	assert.Nil(t, val)
@@ -33,6 +37,10 @@ func TestBasicHashes(t *testing.T) {
 	val, err = c.HGET("k1", "f1")
 	assert.NoError(t, err)
 	assert.Nil(t, val)
+
+	exists, err = c.HEXISTS("k1", "f1")
+	assert.NoError(t, err)
+	assert.False(t, exists)
 }
 
 func TestAtomicHashOps(t *testing.T) {
