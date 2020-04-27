@@ -27,6 +27,10 @@ func TestBasicHashes(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Nil(t, val)
 
+	keyValues, err := c.HGETALL("k1")
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]Value{"f1": StringValue{"v1"}, "f2": StringValue{"v2"}}, keyValues)
+
 	err = c.HDEL("k1", "f2", "f1")
 	assert.NoError(t, err)
 

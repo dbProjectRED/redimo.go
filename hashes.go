@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go/aws"
 )
 
 func (c Client) HGET(key string, field string) (val Value, err error) {
@@ -144,6 +144,41 @@ func (c Client) HEXISTS(key string, field string) (exists bool, err error) {
 	}).Send(context.TODO())
 	if err == nil && len(resp.Item) > 0 {
 		exists = true
+	}
+	return
+}
+
+func (c Client) HGETALL(key string) (fieldValues map[string]Value, err error) {
+	fieldValues = make(map[string]Value)
+	hasMoreResults := true
+	var lastKey map[string]dynamodb.AttributeValue
+
+	for hasMoreResults {
+		builder := newExpresionBuilder()
+		builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
+		builder.values[pk] = dynamodb.AttributeValue{
+			S: aws.String(key),
+		}
+		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
+			ConsistentRead:            aws.Bool(c.consistentReads),
+			ExclusiveStartKey:         lastKey,
+			ExpressionAttributeNames:  builder.expressionAttributeNames(),
+			ExpressionAttributeValues: builder.expressionAttributeValues(),
+			KeyConditionExpression:    builder.conditionExpression(),
+			TableName:                 aws.String(c.table),
+		}).Send(context.TODO())
+		if err != nil {
+			return fieldValues, err
+		}
+		for _, item := range resp.Items {
+			parsedItem := parseItem(item)
+			fieldValues[parsedItem.sk] = parsedItem.val
+		}
+		if len(resp.LastEvaluatedKey) > 0 {
+			lastKey = resp.LastEvaluatedKey
+		} else {
+			hasMoreResults = false
+		}
 	}
 	return
 }
