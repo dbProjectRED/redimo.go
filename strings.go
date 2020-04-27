@@ -63,7 +63,6 @@ func (c Client) SETNX(key string, value Value) (ok bool, err error) {
 
 // GETSET https://redis.io/commands/getset
 func (c Client) GETSET(key string, value Value) (oldValue Value, err error) {
-	// TODO remove TTL, GETSET seems to require it
 	builder := newExpresionBuilder()
 	builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, value.toAV())
 	resp, err := c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{

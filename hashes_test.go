@@ -1,6 +1,7 @@
 package redimo
 
 import (
+	"math/big"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -64,4 +65,37 @@ func TestAtomicHashOps(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, []Value{StringValue{"v1"}, StringValue{"v2"}}, values)
 
+}
+
+func TestHashCounters(t *testing.T) {
+	c := newClient(t)
+
+	after, err := c.HINCRBYFLOAT("k1", "f1", big.NewFloat(3.14))
+	assert.NoError(t, err)
+	f, _ := after.Float64()
+	assert.InDelta(t, 3.14, f, 0.001)
+
+	after, err = c.HINCRBYFLOAT("k1", "f1", big.NewFloat(-1.618))
+	assert.NoError(t, err)
+	f, _ = after.Float64()
+	assert.InDelta(t, 1.522, f, 0.001)
+
+	afterInt, err := c.HINCRBY("k1", "f1", big.NewInt(42))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(43), afterInt.Int64())
+
+	afterInt, err = c.HINCRBY("k1", "f1", big.NewInt(-13))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(30), afterInt.Int64())
+
+	afterInt, err = c.HINCRBY("k1", "f2", big.NewInt(42))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(42), afterInt.Int64())
+
+	v, err := c.HGET("k1", "f2")
+	assert.NoError(t, err)
+	nval, ok := v.AsNumeric()
+	assert.True(t, ok)
+	n, _ := nval.Int64()
+	assert.Equal(t, n, int64(42))
 }

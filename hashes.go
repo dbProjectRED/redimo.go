@@ -3,6 +3,7 @@ package redimo
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -151,8 +152,7 @@ func (c Client) HEXISTS(key string, field string) (exists bool, err error) {
 func (c Client) HGETALL(key string) (fieldValues map[string]Value, err error) {
 	fieldValues = make(map[string]Value)
 	hasMoreResults := true
-	var lastKey map[string]dynamodb.AttributeValue
-
+	var lastEvaluatedKey map[string]dynamodb.AttributeValue
 	for hasMoreResults {
 		builder := newExpresionBuilder()
 		builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
@@ -161,7 +161,7 @@ func (c Client) HGETALL(key string) (fieldValues map[string]Value, err error) {
 		}
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 			ConsistentRead:            aws.Bool(c.consistentReads),
-			ExclusiveStartKey:         lastKey,
+			ExclusiveStartKey:         lastEvaluatedKey,
 			ExpressionAttributeNames:  builder.expressionAttributeNames(),
 			ExpressionAttributeValues: builder.expressionAttributeValues(),
 			KeyConditionExpression:    builder.conditionExpression(),
@@ -175,10 +175,39 @@ func (c Client) HGETALL(key string) (fieldValues map[string]Value, err error) {
 			fieldValues[parsedItem.sk] = parsedItem.val
 		}
 		if len(resp.LastEvaluatedKey) > 0 {
-			lastKey = resp.LastEvaluatedKey
+			lastEvaluatedKey = resp.LastEvaluatedKey
 		} else {
 			hasMoreResults = false
 		}
 	}
 	return
+}
+
+func (c Client) HINCRBYFLOAT(key string, field string, delta *big.Float) (after *big.Float, err error) {
+	builder := newExpresionBuilder()
+	builder.keys[vk] = struct{}{}
+	resp, err := c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
+		ExpressionAttributeNames: builder.expressionAttributeNames(),
+		ExpressionAttributeValues: map[string]dynamodb.AttributeValue{
+			":delta": NumericValue{delta}.toAV(),
+		},
+		Key:              keyDef{pk: key, sk: field}.toAV(),
+		ReturnValues:     dynamodb.ReturnValueAllNew,
+		TableName:        aws.String(c.table),
+		UpdateExpression: aws.String("ADD #val :delta"),
+	}).Send(context.TODO())
+	if err == nil {
+		after, _ = parseItem(resp.UpdateItemOutput.Attributes).val.AsNumeric()
+	}
+	return
+}
+
+func (c Client) HINCRBY(key string, field string, delta *big.Int) (after *big.Int, err error) {
+	afterFloat, err := c.HINCRBYFLOAT(key, field, new(big.Float).SetInt(delta))
+	if err != nil {
+		return
+	}
+	after, _ = afterFloat.Int(nil)
+	return
+
 }

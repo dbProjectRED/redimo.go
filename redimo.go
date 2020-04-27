@@ -18,7 +18,7 @@ type Client struct {
 const pk = "pk"
 const sk = "sk"
 const vk = "val"
-const defaultSK = "."
+const defaultSK = "/"
 
 type expressionBuilder struct {
 	conditions []string
