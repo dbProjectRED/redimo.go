@@ -209,5 +209,80 @@ func (c Client) HINCRBY(key string, field string, delta *big.Int) (after *big.In
 	}
 	after, _ = afterFloat.Int(nil)
 	return
+}
 
+func (c Client) HKEYS(key string) (keys []string, err error) {
+	hasMoreResults := true
+	var lastEvaluatedKey map[string]dynamodb.AttributeValue
+	for hasMoreResults {
+		builder := newExpresionBuilder()
+		builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
+		builder.values[pk] = dynamodb.AttributeValue{
+			S: aws.String(key),
+		}
+		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
+			ConsistentRead:            aws.Bool(c.consistentReads),
+			ExclusiveStartKey:         lastEvaluatedKey,
+			ExpressionAttributeNames:  builder.expressionAttributeNames(),
+			ExpressionAttributeValues: builder.expressionAttributeValues(),
+			KeyConditionExpression:    builder.conditionExpression(),
+			TableName:                 aws.String(c.table),
+			ProjectionExpression:      aws.String(sk),
+			Select:                    dynamodb.SelectSpecificAttributes,
+		}).Send(context.TODO())
+		if err != nil {
+			return keys, err
+		}
+		for _, item := range resp.Items {
+			parsedItem := parseItem(item)
+			keys = append(keys, parsedItem.sk)
+		}
+		if len(resp.LastEvaluatedKey) > 0 {
+			lastEvaluatedKey = resp.LastEvaluatedKey
+		} else {
+			hasMoreResults = false
+		}
+	}
+	return
+}
+
+func (c Client) HVALS(key string) (values []Value, err error) {
+	all, err := c.HGETALL(key)
+	if err == nil {
+		for _, v := range all {
+			values = append(values, v)
+		}
+	}
+	return
+}
+
+func (c Client) HLEN(key string) (count int64, err error) {
+	hasMoreResults := true
+	var lastEvaluatedKey map[string]dynamodb.AttributeValue
+	for hasMoreResults {
+		builder := newExpresionBuilder()
+		builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
+		builder.values[pk] = dynamodb.AttributeValue{
+			S: aws.String(key),
+		}
+		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
+			ConsistentRead:            aws.Bool(c.consistentReads),
+			ExclusiveStartKey:         lastEvaluatedKey,
+			ExpressionAttributeNames:  builder.expressionAttributeNames(),
+			ExpressionAttributeValues: builder.expressionAttributeValues(),
+			KeyConditionExpression:    builder.conditionExpression(),
+			TableName:                 aws.String(c.table),
+			Select:                    dynamodb.SelectCount,
+		}).Send(context.TODO())
+		if err != nil {
+			return count, err
+		}
+		count = count + aws.Int64Value(resp.ScannedCount)
+		if len(resp.LastEvaluatedKey) > 0 {
+			lastEvaluatedKey = resp.LastEvaluatedKey
+		} else {
+			hasMoreResults = false
+		}
+	}
+	return
 }

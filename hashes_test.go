@@ -32,6 +32,18 @@ func TestBasicHashes(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, map[string]Value{"f1": StringValue{"v1"}, "f2": StringValue{"v2"}}, keyValues)
 
+	keys, err := c.HKEYS("k1")
+	assert.NoError(t, err)
+	assert.ElementsMatch(t, []string{"f1", "f2"}, keys)
+
+	vals, err := c.HVALS("k1")
+	assert.NoError(t, err)
+	assert.ElementsMatch(t, []Value{StringValue{"v1"}, StringValue{"v2"}}, vals)
+
+	count, err := c.HLEN("k1")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), count)
+
 	err = c.HDEL("k1", "f2", "f1")
 	assert.NoError(t, err)
 
@@ -46,6 +58,18 @@ func TestBasicHashes(t *testing.T) {
 	exists, err = c.HEXISTS("k1", "f1")
 	assert.NoError(t, err)
 	assert.False(t, exists)
+
+	keys, err = c.HKEYS("nosuchkey")
+	assert.NoError(t, err)
+	assert.ElementsMatch(t, []string{}, keys)
+
+	vals, err = c.HVALS("nosuchkey")
+	assert.NoError(t, err)
+	assert.ElementsMatch(t, []Value{}, vals)
+
+	count, err = c.HLEN("nosuchkey")
+	assert.NoError(t, err)
+	assert.Zero(t, count)
 }
 
 func TestAtomicHashOps(t *testing.T) {
