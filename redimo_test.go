@@ -33,7 +33,7 @@ func newClient(t *testing.T) Client {
 	}).Send(context.TODO())
 	assert.NoError(t, err)
 	return Client{
-		client:          dynamoService,
+		ddbClient:       dynamoService,
 		consistentReads: true,
 		table:           name,
 	}

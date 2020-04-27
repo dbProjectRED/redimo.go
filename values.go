@@ -46,7 +46,10 @@ type NumericValue struct {
 	bf *big.Float
 }
 
-func (nv NumericValue) Int() *big.Int                        { return nv.Int() }
+func (nv NumericValue) Int() *big.Int {
+	intValue, _ := nv.bf.Int(nil)
+	return intValue
+}
 func (nv NumericValue) Float() *big.Float                    { return nv.bf }
 func (nv NumericValue) AsBytes() (out []byte, ok bool)       { return }
 func (nv NumericValue) AsString() (out string, ok bool)      { return }

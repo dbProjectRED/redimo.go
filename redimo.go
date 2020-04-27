@@ -10,7 +10,7 @@ import (
 )
 
 type Client struct {
-	client          *dynamodb.Client
+	ddbClient       *dynamodb.Client
 	consistentReads bool
 	table           string
 }
@@ -107,8 +107,7 @@ func (k keyDef) toAV() map[string]dynamodb.AttributeValue {
 
 type itemDef struct {
 	keyDef
-	val   Value
-	score float64
+	val Value
 }
 
 func (i itemDef) eav() map[string]dynamodb.AttributeValue {

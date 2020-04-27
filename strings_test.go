@@ -137,10 +137,12 @@ func TestAtomicOps(t *testing.T) {
 	assert.False(t, ok)
 	values, err = c.MGET([]string{"k3", "k5"}...)
 	assert.Equal(t, []Value{StringValue{"v3.1"}, nil}, values)
+	assert.NoError(t, err)
 
 	ok, err = c.MSETNX(map[string]Value{"k5": StringValue{"v5"}, "k6": StringValue{"v6"}})
 	assert.NoError(t, err)
 	assert.True(t, ok)
 	values, err = c.MGET("k5", "k6")
+	assert.NoError(t, err)
 	assert.Equal(t, []Value{StringValue{"v5"}, StringValue{"v6"}}, values)
 }

@@ -22,6 +22,17 @@ func TestBasicHashes(t *testing.T) {
 	val, err = c.HGET("nosuchkey", "no such field")
 	assert.NoError(t, err)
 	assert.Nil(t, val)
+
+	err = c.HDEL("k1", "f2", "f1")
+	assert.NoError(t, err)
+
+	val, err = c.HGET("k1", "f2")
+	assert.NoError(t, err)
+	assert.Nil(t, val)
+
+	val, err = c.HGET("k1", "f1")
+	assert.NoError(t, err)
+	assert.Nil(t, val)
 }
 
 func TestAtomicHashOps(t *testing.T) {

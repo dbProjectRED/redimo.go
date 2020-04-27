@@ -10,7 +10,7 @@ import (
 )
 
 func (c Client) HGET(key string, field string) (val Value, err error) {
-	resp, err := c.client.GetItemRequest(&dynamodb.GetItemInput{
+	resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
 		ConsistentRead: aws.Bool(c.consistentReads),
 		Key: keyDef{
 			pk: key,
@@ -45,7 +45,7 @@ func (c Client) HSET(key string, fieldValues map[string]Value) (savedCount int64
 
 	for len(requestMap[c.table]) > 0 {
 		attempting := len(requestMap[c.table])
-		resp, err := c.client.BatchWriteItemRequest(&dynamodb.BatchWriteItemInput{
+		resp, err := c.ddbClient.BatchWriteItemRequest(&dynamodb.BatchWriteItemInput{
 			RequestItems: requestMap,
 		}).Send(context.TODO())
 		if err != nil {
@@ -78,7 +78,7 @@ func (c Client) HMSET(key string, fieldValues map[string]Value) (err error) {
 			},
 		})
 	}
-	_, err = c.client.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
+	_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
 		TransactItems: items,
 	}).Send(context.TODO())
 	return
@@ -96,13 +96,38 @@ func (c Client) HMGET(key string, fields ...string) (values []Value, err error) 
 			TableName:            aws.String(c.table),
 		}})
 	}
-	resp, err := c.client.TransactGetItemsRequest(&dynamodb.TransactGetItemsInput{
+	resp, err := c.ddbClient.TransactGetItemsRequest(&dynamodb.TransactGetItemsInput{
 		TransactItems: items,
 	}).Send(context.TODO())
 	if err == nil {
 		for _, r := range resp.Responses {
 			values = append(values, parseItem(r.Item).val)
 		}
+	}
+	return
+}
+
+func (c Client) HDEL(key string, fields ...string) (err error) {
+	deleteRequests := make([]dynamodb.WriteRequest, len(fields))
+	for i, field := range fields {
+		deleteRequests[i] = dynamodb.WriteRequest{
+			DeleteRequest: &dynamodb.DeleteRequest{Key: keyDef{
+				pk: key,
+				sk: field,
+			}.toAV()},
+		}
+	}
+	requestMap := map[string][]dynamodb.WriteRequest{
+		c.table: deleteRequests,
+	}
+	for len(requestMap) > 0 {
+		resp, err := c.ddbClient.BatchWriteItemRequest(&dynamodb.BatchWriteItemInput{
+			RequestItems: requestMap,
+		}).Send(context.TODO())
+		if err != nil {
+			return err
+		}
+		requestMap = resp.UnprocessedItems
 	}
 	return
 }

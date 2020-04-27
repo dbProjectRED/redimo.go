@@ -11,7 +11,7 @@ import (
 
 // GET conforms to https://redis.io/commands/get
 func (c Client) GET(key string) (val Value, err error) {
-	resp, err := c.client.GetItemRequest(&dynamodb.GetItemInput{
+	resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
 		ConsistentRead: aws.Bool(c.consistentReads),
 		Key:            keyDef{pk: key, sk: defaultSK}.toAV(),
 		TableName:      aws.String(c.table),
@@ -36,7 +36,7 @@ func (c Client) SET(key string, value Value, flags Flags) (ok bool, err error) {
 		builder.condition(fmt.Sprintf("attribute_exists(#%v)", pk), pk)
 	}
 
-	_, err = c.client.UpdateItemRequest(&dynamodb.UpdateItemInput{
+	_, err = c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
 		ConditionExpression:       builder.conditionExpression(),
 		ExpressionAttributeNames:  builder.expressionAttributeNames(),
 		ExpressionAttributeValues: builder.expressionAttributeValues(),
@@ -66,7 +66,7 @@ func (c Client) GETSET(key string, value Value) (oldValue Value, err error) {
 	// TODO remove TTL, GETSET seems to require it
 	builder := newExpresionBuilder()
 	builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, value.toAV())
-	resp, err := c.client.UpdateItemRequest(&dynamodb.UpdateItemInput{
+	resp, err := c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
 		ConditionExpression:       builder.conditionExpression(),
 		ExpressionAttributeNames:  builder.expressionAttributeNames(),
 		ExpressionAttributeValues: builder.expressionAttributeValues(),
@@ -102,7 +102,7 @@ func (c Client) MGET(keys ...string) (outputs []Value, err error) {
 			},
 		}
 	}
-	resp, err := c.client.TransactGetItemsRequest(&dynamodb.TransactGetItemsInput{
+	resp, err := c.ddbClient.TransactGetItemsRequest(&dynamodb.TransactGetItemsInput{
 		TransactItems: inputRequests,
 	}).Send(context.TODO())
 	if err != nil {
@@ -154,7 +154,7 @@ func (c Client) _mset(data map[string]Value, flags Flags) (ok bool, err error) {
 			},
 		})
 	}
-	_, err = c.client.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
+	_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
 		ClientRequestToken: nil,
 		TransactItems:      inputs,
 	}).Send(context.TODO())
@@ -171,7 +171,7 @@ func (c Client) _mset(data map[string]Value, flags Flags) (ok bool, err error) {
 func (c Client) INCRBYFLOAT(key string, delta *big.Float) (after *big.Float, err error) {
 	builder := newExpresionBuilder()
 	builder.keys[vk] = struct{}{}
-	resp, err := c.client.UpdateItemRequest(&dynamodb.UpdateItemInput{
+	resp, err := c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
 		ExpressionAttributeNames: builder.expressionAttributeNames(),
 		ExpressionAttributeValues: map[string]dynamodb.AttributeValue{
 			":delta": NumericValue{delta}.toAV(),
