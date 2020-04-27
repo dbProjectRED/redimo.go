@@ -89,6 +89,18 @@ func TestAtomicHashOps(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, []Value{StringValue{"v1"}, StringValue{"v2"}}, values)
 
+	ok, err := c.HSETNX("k1", "f1", StringValue{"v1"})
+	assert.NoError(t, err)
+	assert.False(t, ok)
+
+	ok, err = c.HSETNX("k1", "f9", StringValue{"v9"})
+	assert.NoError(t, err)
+	assert.True(t, ok)
+
+	val, err = c.HGET("k1", "f9")
+	assert.NoError(t, err)
+	assert.Equal(t, StringValue{"v9"}, val)
+
 }
 
 func TestHashCounters(t *testing.T) {

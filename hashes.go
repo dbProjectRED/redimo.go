@@ -286,3 +286,27 @@ func (c Client) HLEN(key string) (count int64, err error) {
 	}
 	return
 }
+
+func (c Client) HSETNX(key string, field string, value Value) (ok bool, err error) {
+	builder := newExpresionBuilder()
+	builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, value.toAV())
+	builder.condition(fmt.Sprintf("(attribute_not_exists(#%v))", pk), pk)
+	_, err = c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
+		ConditionExpression:       builder.conditionExpression(),
+		ExpressionAttributeNames:  builder.expressionAttributeNames(),
+		ExpressionAttributeValues: builder.expressionAttributeValues(),
+		Key: keyDef{
+			pk: key,
+			sk: field,
+		}.toAV(),
+		TableName:        aws.String(c.table),
+		UpdateExpression: builder.updateExpression(),
+	}).Send(context.TODO())
+	if conditionFailureError(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
