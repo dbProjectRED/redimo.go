@@ -138,4 +138,31 @@ func TestSetModifiers(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), newCount)
 
+	err = c.SADD("s1", "m1", "m2", "m3")
+	assert.NoError(t, err)
+
+	ok, err := c.SMOVE("s1", "s2", "m1")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+
+	members, err = c.SMEMBERS("s1")
+	assert.NoError(t, err)
+	assert.ElementsMatch(t, []string{"m2", "m3"}, members)
+
+	members, err = c.SMEMBERS("s2")
+	assert.NoError(t, err)
+	assert.ElementsMatch(t, []string{"m1"}, members)
+
+	ok, err = c.SMOVE("s1", "s2", "nosuchmember")
+	assert.NoError(t, err)
+	assert.False(t, ok)
+
+	members, err = c.SMEMBERS("s1")
+	assert.NoError(t, err)
+	assert.ElementsMatch(t, []string{"m2", "m3"}, members)
+
+	members, err = c.SMEMBERS("s2")
+	assert.NoError(t, err)
+	assert.ElementsMatch(t, []string{"m1"}, members)
+
 }

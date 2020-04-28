@@ -154,7 +154,34 @@ func (c Client) SMEMBERS(key string) (members []string, err error) {
 }
 
 func (c Client) SMOVE(sourceKey string, destinationKey string, member string) (ok bool, err error) {
-	return
+	builder := newExpresionBuilder()
+	builder.condition(fmt.Sprintf("attribute_exists(#%v)", pk), pk)
+	_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
+		TransactItems: []dynamodb.TransactWriteItem{
+			{
+				Delete: &dynamodb.Delete{
+					ConditionExpression:       builder.conditionExpression(),
+					ExpressionAttributeNames:  builder.expressionAttributeNames(),
+					ExpressionAttributeValues: builder.expressionAttributeValues(),
+					Key:                       keyDef{pk: sourceKey, sk: member}.toAV(),
+					TableName:                 aws.String(c.table),
+				},
+			},
+			{
+				Put: &dynamodb.Put{
+					Item:      keyDef{pk: destinationKey, sk: member}.toAV(),
+					TableName: aws.String(c.table),
+				},
+			},
+		},
+	}).Send(context.TODO())
+	if conditionFailureError(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (c Client) SPOP(key string, count int64) (members []string, err error) {
