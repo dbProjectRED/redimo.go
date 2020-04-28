@@ -2,6 +2,7 @@ package redimo
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -66,6 +67,35 @@ func (c Client) SISMEMBER(key string, member string) (ok bool, err error) {
 }
 
 func (c Client) SMEMBERS(key string) (members []string, err error) {
+	hasMoreResults := true
+	var lastEvaluatedKey map[string]dynamodb.AttributeValue
+	for hasMoreResults {
+		builder := newExpresionBuilder()
+		builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
+		builder.values[pk] = dynamodb.AttributeValue{
+			S: aws.String(key),
+		}
+		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
+			ConsistentRead:            aws.Bool(c.consistentReads),
+			ExclusiveStartKey:         lastEvaluatedKey,
+			ExpressionAttributeNames:  builder.expressionAttributeNames(),
+			ExpressionAttributeValues: builder.expressionAttributeValues(),
+			KeyConditionExpression:    builder.conditionExpression(),
+			TableName:                 aws.String(c.table),
+		}).Send(context.TODO())
+		if err != nil {
+			return members, err
+		}
+		for _, item := range resp.Items {
+			parsedItem := parseItem(item)
+			members = append(members, parsedItem.sk)
+		}
+		if len(resp.LastEvaluatedKey) > 0 {
+			lastEvaluatedKey = resp.LastEvaluatedKey
+		} else {
+			hasMoreResults = false
+		}
+	}
 	return
 }
 
@@ -81,11 +111,11 @@ func (c Client) SRANDMEMBER(key string, count int64) (members []string, err erro
 	return
 }
 
-func (c Client) SREM(key string, members ...string) (count int64, err error) {
+func (c Client) SREM(key string, members ...string) (err error) {
 	return
 }
 
-func (c Client) SUNION(key string, otherKeys ...string) (memebers []string, err error) {
+func (c Client) SUNION(key string, otherKeys ...string) (members []string, err error) {
 	return
 }
 
