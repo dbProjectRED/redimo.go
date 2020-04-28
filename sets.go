@@ -166,6 +166,9 @@ func (c Client) SPOP(key string, count int64) (members []string, err error) {
 }
 
 func (c Client) SRANDMEMBER(key string, count int64) (members []string, err error) {
+	if count < 0 {
+		count = -count
+	}
 	builder := newExpresionBuilder()
 	builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
 	builder.values[pk] = dynamodb.AttributeValue{

@@ -124,6 +124,11 @@ func TestSetModifiers(t *testing.T) {
 	assert.Equal(t, 1, len(members))
 	assert.Subset(t, []string{"m1", "m2", "m3"}, members)
 
+	members, err = c.SRANDMEMBER("s1", -2)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(members))
+	assert.Subset(t, []string{"m1", "m2", "m3"}, members)
+
 	members, err = c.SPOP("s1", 2)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(members))
