@@ -158,10 +158,34 @@ func (c Client) SMOVE(sourceKey string, destinationKey string, member string) (o
 }
 
 func (c Client) SPOP(key string, count int64) (members []string, err error) {
+	members, err = c.SRANDMEMBER(key, count)
+	if err == nil {
+		err = c.SREM(key, members...)
+	}
 	return
 }
 
 func (c Client) SRANDMEMBER(key string, count int64) (members []string, err error) {
+	builder := newExpresionBuilder()
+	builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
+	builder.values[pk] = dynamodb.AttributeValue{
+		S: aws.String(key),
+	}
+	resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
+		ConsistentRead:            aws.Bool(c.consistentReads),
+		ExpressionAttributeNames:  builder.expressionAttributeNames(),
+		ExpressionAttributeValues: builder.expressionAttributeValues(),
+		KeyConditionExpression:    builder.conditionExpression(),
+		Limit:                     aws.Int64(count),
+		TableName:                 aws.String(c.table),
+	}).Send(context.TODO())
+	if err != nil {
+		return members, err
+	}
+	for _, item := range resp.Items {
+		parsedItem := parseItem(item)
+		members = append(members, parsedItem.sk)
+	}
 	return
 }
 

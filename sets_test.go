@@ -112,3 +112,25 @@ func TestSetOperations(t *testing.T) {
 	assert.NoError(t, err)
 	assert.ElementsMatch(t, []string{}, union)
 }
+
+func TestSetModifiers(t *testing.T) {
+	c := newClient(t)
+
+	err := c.SADD("s1", "m1", "m2", "m3")
+	assert.NoError(t, err)
+
+	members, err := c.SRANDMEMBER("s1", 1)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(members))
+	assert.Subset(t, []string{"m1", "m2", "m3"}, members)
+
+	members, err = c.SPOP("s1", 2)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(members))
+	assert.Subset(t, []string{"m1", "m2", "m3"}, members)
+
+	newCount, err := c.SCARD("s1")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), newCount)
+
+}
