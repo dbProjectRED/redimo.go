@@ -112,6 +112,28 @@ func (c Client) SRANDMEMBER(key string, count int64) (members []string, err erro
 }
 
 func (c Client) SREM(key string, members ...string) (err error) {
+	writeItems := make([]dynamodb.WriteRequest, len(members))
+	for i, member := range members {
+		writeItems[i] = dynamodb.WriteRequest{
+			DeleteRequest: &dynamodb.DeleteRequest{
+				Key: keyDef{
+					pk: key,
+					sk: member,
+				}.toAV(),
+			},
+		}
+	}
+	requestMap := map[string][]dynamodb.WriteRequest{}
+	requestMap[c.table] = writeItems
+	for len(requestMap) > 0 {
+		resp, err := c.ddbClient.BatchWriteItemRequest(&dynamodb.BatchWriteItemInput{
+			RequestItems: requestMap,
+		}).Send(context.TODO())
+		if err != nil {
+			return err
+		}
+		requestMap = resp.UnprocessedItems
+	}
 	return
 }
 

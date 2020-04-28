@@ -27,4 +27,15 @@ func TestBasicSets(t *testing.T) {
 	members, err = c.SMEMBERS("nosuchset")
 	assert.NoError(t, err)
 	assert.ElementsMatch(t, []string{}, members)
+
+	err = c.SREM("s1", "m1", "m2")
+	assert.NoError(t, err)
+
+	members, err = c.SMEMBERS("s1")
+	assert.NoError(t, err)
+	assert.ElementsMatch(t, []string{"m3"}, members)
+
+	ok, err = c.SISMEMBER("s1", "m1")
+	assert.NoError(t, err)
+	assert.False(t, ok)
 }
