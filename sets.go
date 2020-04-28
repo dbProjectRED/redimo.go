@@ -38,20 +38,74 @@ func (c Client) SCARD(key string) (count int64) {
 	return
 }
 
-func (c Client) SDIFF(key string, otherKeys ...string) (members []string, err error) {
+func (c Client) SDIFF(key string, subtractKeys ...string) (members []string, err error) {
+	memberSet := make(map[string]struct{})
+	startingList, err := c.SMEMBERS(key)
+	if err != nil {
+		return
+	}
+	for _, member := range startingList {
+		memberSet[member] = struct{}{}
+	}
+	for _, otherKey := range subtractKeys {
+		otherList, err := c.SMEMBERS(otherKey)
+		if err != nil {
+			return members, err
+		}
+		for _, member := range otherList {
+			delete(memberSet, member)
+		}
+	}
+	for member := range memberSet {
+		members = append(members, member)
+	}
 	return
 }
 
-func (c Client) SDIFFSTORE(destinationKey string, sourceKeys ...string) (count int64, err error) {
+func (c Client) SDIFFSTORE(destinationKey string, sourceKey string, subtractKeys ...string) (count int64, err error) {
+	members, err := c.SDIFF(sourceKey, subtractKeys...)
+	if err == nil {
+		err = c.SADD(destinationKey, members...)
+	}
+	return int64(len(members)), err
+}
+
+func (c Client) SINTER(key string, otherKeys ...string) (members []string, err error) {
+	memberSet := make(map[string]struct{})
+	startingList, err := c.SMEMBERS(key)
+	if err != nil {
+		return
+	}
+	for _, member := range startingList {
+		memberSet[member] = struct{}{}
+	}
+	for _, otherKey := range otherKeys {
+		otherList, err := c.SMEMBERS(otherKey)
+		if err != nil {
+			return members, err
+		}
+		otherSet := make(map[string]struct{})
+		for _, member := range otherList {
+			otherSet[member] = struct{}{}
+		}
+		for member := range memberSet {
+			if _, ok := otherSet[member]; !ok {
+				delete(memberSet, member)
+			}
+		}
+	}
+	for member := range memberSet {
+		members = append(members, member)
+	}
 	return
 }
 
-func (c Client) SINTER(key string, otherKeys ...string) (memebers []string, err error) {
-	return
-}
-
-func (c Client) SINTERSTORE(destinationKey string, sourceKeys ...string) (count int64, err error) {
-	return
+func (c Client) SINTERSTORE(destinationKey string, sourceKey string, otherKeys ...string) (count int64, err error) {
+	members, err := c.SINTER(sourceKey, otherKeys...)
+	if err == nil {
+		err = c.SADD(destinationKey, members...)
+	}
+	return int64(len(members)), err
 }
 
 func (c Client) SISMEMBER(key string, member string) (ok bool, err error) {
@@ -137,10 +191,27 @@ func (c Client) SREM(key string, members ...string) (err error) {
 	return
 }
 
-func (c Client) SUNION(key string, otherKeys ...string) (members []string, err error) {
+func (c Client) SUNION(keys ...string) (members []string, err error) {
+	memberSet := make(map[string]struct{})
+	for _, key := range keys {
+		setMembers, err := c.SMEMBERS(key)
+		if err != nil {
+			return members, err
+		}
+		for _, member := range setMembers {
+			memberSet[member] = struct{}{}
+		}
+	}
+	for member := range memberSet {
+		members = append(members, member)
+	}
 	return
 }
 
 func (c Client) SUNIONSTORE(destinationKey string, sourceKeys ...string) (count int64, err error) {
-	return
+	members, err := c.SUNION(sourceKeys...)
+	if err == nil {
+		err = c.SADD(destinationKey, members...)
+	}
+	return int64(len(members)), err
 }
