@@ -34,8 +34,8 @@ func (c Client) SADD(key string, members ...string) (err error) {
 	return
 }
 
-func (c Client) SCARD(key string) (count int64) {
-	return
+func (c Client) SCARD(key string) (count int64, err error) {
+	return c.HLEN(key)
 }
 
 func (c Client) SDIFF(key string, subtractKeys ...string) (members []string, err error) {

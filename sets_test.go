@@ -24,6 +24,10 @@ func TestBasicSets(t *testing.T) {
 	assert.NoError(t, err)
 	assert.ElementsMatch(t, []string{"m1", "m2", "m3"}, members)
 
+	count, err := c.SCARD("s1")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), count)
+
 	members, err = c.SMEMBERS("nosuchset")
 	assert.NoError(t, err)
 	assert.ElementsMatch(t, []string{}, members)
@@ -38,6 +42,14 @@ func TestBasicSets(t *testing.T) {
 	ok, err = c.SISMEMBER("s1", "m1")
 	assert.NoError(t, err)
 	assert.False(t, ok)
+
+	count, err = c.SCARD("s1")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+
+	count, err = c.SCARD("nosuchkey")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(0), count)
 }
 
 func TestSetOperations(t *testing.T) {
