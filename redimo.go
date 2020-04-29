@@ -3,6 +3,7 @@ package redimo
 import (
 	"fmt"
 	"log"
+	"math"
 	"math/big"
 	"strconv"
 	"strings"
@@ -192,6 +193,9 @@ func conditionFailureError(err error) bool {
 	return false
 }
 
+const expFlip = 999
+const mantissaFlip = 10
+
 // c nnn n.nnnnnnnnnnnnnnnn
 func floatToLex(f float64) (s string) {
 	sn := fmt.Sprintf("%0.17e", f)
@@ -205,10 +209,6 @@ func floatToLex(f float64) (s string) {
 	mantissa, _ := strconv.ParseFloat(parts[0], 64)
 	exponent, _ := strconv.ParseInt(parts[1], 10, 64)
 
-	const expFlip = 999
-
-	const mantissaFlip = 10
-
 	switch {
 	case mantissa > 0 && exponent > 0:
 		parts = []string{"5", padExponent(exponent), padMantissa(mantissa)}
@@ -217,7 +217,7 @@ func floatToLex(f float64) (s string) {
 	case mantissa == 0 && exponent == 0:
 		parts = []string{"3", padExponent(exponent), padMantissa(mantissa)}
 	case mantissa < 0 && exponent < 0:
-		parts = []string{"2", padExponent(exponent), padMantissa(mantissaFlip + mantissa)}
+		parts = []string{"2", padExponent(-exponent), padMantissa(mantissaFlip + mantissa)}
 	case mantissa < 0 && exponent > 0:
 		parts = []string{"1", padExponent(expFlip - exponent), padMantissa(mantissaFlip + mantissa)}
 	}
@@ -225,11 +225,27 @@ func floatToLex(f float64) (s string) {
 	return strings.Join(parts, " ")
 }
 
-func padExponent(exponent int64) (s string) {
-	if exponent < 0 {
-		exponent = -exponent
+func lexToFloat(lex string) (f float64) {
+	parts := strings.Split(lex, " ")
+	mantissa, _ := strconv.ParseFloat(parts[2], 64)
+	exponent, _ := strconv.ParseInt(parts[1], 10, 64)
+	switch parts[0] {
+	case "1":
+		//"1 894 6.0000000000000000"
+		return (mantissa - mantissaFlip) * math.Pow10(int(expFlip-exponent))
+	case "2":
+		return (mantissa - mantissaFlip) * math.Pow10(int(-exponent))
+	case "3":
+		return float64(0)
+	case "4":
+		return mantissa * math.Pow10(int(exponent-expFlip))
+	case "5":
+		return mantissa * math.Pow10(int(exponent))
 	}
+	return
+}
 
+func padExponent(exponent int64) (s string) {
 	s = strconv.Itoa(int(exponent))
 
 	for len(s) < 3 {

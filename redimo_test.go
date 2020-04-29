@@ -3,6 +3,7 @@ package redimo
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"net/http"
 	"testing"
 
@@ -96,6 +97,19 @@ func Test_fToLex(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%e", tt.in), func(t *testing.T) {
 			assert.Equal(t, tt.out, floatToLex(tt.in), tt)
+
+			expected := big.NewFloat(tt.in)
+			expectedBigMant := new(big.Float)
+			expectedExp := expected.MantExp(expectedBigMant)
+			expectedMant, _ := expectedBigMant.Float64()
+
+			actual := big.NewFloat(lexToFloat(tt.out))
+			actualBigMant := new(big.Float)
+			actualExp := actual.MantExp(actualBigMant)
+			actualMant, _ := actualBigMant.Float64()
+			assert.InDelta(t, expectedMant, actualMant, 0.001)
+			assert.Equal(t, expectedExp, actualExp)
+
 		})
 	}
 }
