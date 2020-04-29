@@ -93,18 +93,22 @@ func TestCounters(t *testing.T) {
 
 	num, err := c.INCRBYFLOAT("count", big.NewFloat(3.14))
 	assert.NoError(t, err)
+
 	f, _ := num.Float64()
 	assert.InDelta(t, 23.14, f, 0.01)
 
 	num, err = c.INCRBYFLOAT("count", big.NewFloat(-3.14))
 	assert.NoError(t, err)
+
 	f, _ = num.Float64()
 	assert.InDelta(t, 20, f, 0.01)
 
 	v, err := c.GET("count")
 	assert.NoError(t, err)
+
 	numeric, ok := v.AsNumeric()
 	assert.True(t, ok)
+
 	f, _ = numeric.Float64()
 	assert.InDelta(t, 20, f, 0.001)
 }
@@ -135,6 +139,7 @@ func TestAtomicOps(t *testing.T) {
 	ok, err := c.MSETNX(map[string]Value{"k3": StringValue{"v3.2"}, "k5": StringValue{"v5"}})
 	assert.NoError(t, err)
 	assert.False(t, ok)
+
 	values, err = c.MGET([]string{"k3", "k5"}...)
 	assert.Equal(t, []Value{StringValue{"v3.1"}, nil}, values)
 	assert.NoError(t, err)
@@ -142,6 +147,7 @@ func TestAtomicOps(t *testing.T) {
 	ok, err = c.MSETNX(map[string]Value{"k5": StringValue{"v5"}, "k6": StringValue{"v6"}})
 	assert.NoError(t, err)
 	assert.True(t, ok)
+
 	values, err = c.MGET("k5", "k6")
 	assert.NoError(t, err)
 	assert.Equal(t, []Value{StringValue{"v5"}, StringValue{"v6"}}, values)

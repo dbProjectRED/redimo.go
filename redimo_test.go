@@ -14,6 +14,7 @@ import (
 
 func newClient(t *testing.T) Client {
 	t.Parallel()
+
 	name := uuid.New().String()
 	dynamoService := dynamodb.New(newConfig(t))
 	_, err := dynamoService.CreateTableRequest(&dynamodb.CreateTableInput{
@@ -32,6 +33,7 @@ func newClient(t *testing.T) Client {
 		},
 	}).Send(context.TODO())
 	assert.NoError(t, err)
+
 	return Client{
 		ddbClient:       dynamoService,
 		consistentReads: true,
@@ -57,6 +59,7 @@ func newConfig(t *testing.T) aws.Config {
 		//external.ResolveCredentials,
 	})
 	assert.NoError(t, err)
+
 	cfg.Credentials = aws.NewStaticCredentialsProvider("ABCD", "EFGH", "IKJGL")
 	cfg.EndpointResolver = aws.ResolveWithEndpointURL("http://localhost:8000")
 	cfg.Region = "ap-south-1"
@@ -64,5 +67,6 @@ func newConfig(t *testing.T) aws.Config {
 	cfg.LogLevel = aws.LogOff
 	cfg.Logger = t
 	cfg.HTTPClient = http.DefaultClient
+
 	return cfg
 }

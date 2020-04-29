@@ -9,7 +9,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
-// GET conforms to https://redis.io/commands/get
 func (c Client) GET(key string) (val Value, err error) {
 	resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
 		ConsistentRead: aws.Bool(c.consistentReads),
@@ -19,11 +18,12 @@ func (c Client) GET(key string) (val Value, err error) {
 	if err != nil || len(resp.Item) == 0 {
 		return
 	}
+
 	val = parseItem(resp.Item).val
+
 	return
 }
 
-// SET conforms to https://redis.io/commands/set
 func (c Client) SET(key string, value Value, flags Flags) (ok bool, err error) {
 	builder := newExpresionBuilder()
 
@@ -32,6 +32,7 @@ func (c Client) SET(key string, value Value, flags Flags) (ok bool, err error) {
 	if flags.has(IfNotExists) {
 		builder.condition(fmt.Sprintf("attribute_not_exists(#%v)", pk), pk)
 	}
+
 	if flags.has(IfAlreadyExists) {
 		builder.condition(fmt.Sprintf("attribute_exists(#%v)", pk), pk)
 	}
@@ -50,21 +51,22 @@ func (c Client) SET(key string, value Value, flags Flags) (ok bool, err error) {
 	if conditionFailureError(err) {
 		return false, nil
 	}
+
 	if err != nil {
 		return
 	}
+
 	return true, nil
 }
 
-// SETNX conforms to https://redis.io/commands/setnx
 func (c Client) SETNX(key string, value Value) (ok bool, err error) {
 	return c.SET(key, value, Flags{IfNotExists})
 }
 
-// GETSET https://redis.io/commands/getset
 func (c Client) GETSET(key string, value Value) (oldValue Value, err error) {
 	builder := newExpresionBuilder()
 	builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, value.toAV())
+
 	resp, err := c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
 		ConditionExpression:       builder.conditionExpression(),
 		ExpressionAttributeNames:  builder.expressionAttributeNames(),
@@ -77,14 +79,16 @@ func (c Client) GETSET(key string, value Value) (oldValue Value, err error) {
 		ReturnValues: dynamodb.ReturnValueAllOld,
 		TableName:    aws.String(c.table),
 	}).Send(context.TODO())
+
 	if err != nil || len(resp.Attributes) == 0 {
 		return
 	}
+
 	oldValue = parseItem(resp.Attributes).val
+
 	return
 }
 
-// MGET conforms to https://redis.io/commands/mget
 func (c Client) MGET(keys ...string) (outputs []Value, err error) {
 	inputRequests := make([]dynamodb.TransactGetItem, len(keys))
 	outputs = make([]Value, len(keys))
@@ -101,12 +105,15 @@ func (c Client) MGET(keys ...string) (outputs []Value, err error) {
 			},
 		}
 	}
+
 	resp, err := c.ddbClient.TransactGetItemsRequest(&dynamodb.TransactGetItemsInput{
 		TransactItems: inputRequests,
 	}).Send(context.TODO())
+
 	if err != nil {
 		return
 	}
+
 	for i, out := range resp.Responses {
 		if len(out.Item) > 0 {
 			outputs[i] = parseItem(out.Item).val
@@ -114,22 +121,22 @@ func (c Client) MGET(keys ...string) (outputs []Value, err error) {
 			outputs[i] = nil
 		}
 	}
+
 	return
 }
 
-// MSET conforms to https://redis.io/commands/mset
 func (c Client) MSET(data map[string]Value) (err error) {
 	_, err = c._mset(data, Flags{})
 	return
 }
 
-// MSETNX conforms to https://redis.io/commands/msetnx
 func (c Client) MSETNX(data map[string]Value) (ok bool, err error) {
 	return c._mset(data, Flags{IfNotExists})
 }
 
 func (c Client) _mset(data map[string]Value, flags Flags) (ok bool, err error) {
-	var inputs []dynamodb.TransactWriteItem
+	inputs := make([]dynamodb.TransactWriteItem, len(data))
+	i := 0
 
 	for k, v := range data {
 		builder := newExpresionBuilder()
@@ -139,7 +146,8 @@ func (c Client) _mset(data map[string]Value, flags Flags) (ok bool, err error) {
 		}
 
 		builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, v.toAV())
-		inputs = append(inputs, dynamodb.TransactWriteItem{
+
+		inputs[i] = dynamodb.TransactWriteItem{
 			Update: &dynamodb.Update{
 				ConditionExpression:       builder.conditionExpression(),
 				ExpressionAttributeNames:  builder.expressionAttributeNames(),
@@ -151,22 +159,26 @@ func (c Client) _mset(data map[string]Value, flags Flags) (ok bool, err error) {
 				TableName:        aws.String(c.table),
 				UpdateExpression: builder.updateExpression(),
 			},
-		})
+		}
+		i++
 	}
+
 	_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
 		ClientRequestToken: nil,
 		TransactItems:      inputs,
 	}).Send(context.TODO())
+
 	if conditionFailureError(err) {
 		return false, nil
 	}
+
 	if err != nil {
 		return false, err
 	}
+
 	return true, nil
 }
 
-// INCRBYFLOAT https://redis.io/commands/incrbyfloat
 func (c Client) INCRBYFLOAT(key string, delta *big.Float) (after *big.Float, err error) {
 	builder := newExpresionBuilder()
 	builder.keys[vk] = struct{}{}
@@ -180,9 +192,11 @@ func (c Client) INCRBYFLOAT(key string, delta *big.Float) (after *big.Float, err
 		TableName:        aws.String(c.table),
 		UpdateExpression: aws.String("ADD #val :delta"),
 	}).Send(context.TODO())
+
 	if err == nil {
 		after, _ = parseItem(resp.UpdateItemOutput.Attributes).val.AsNumeric()
 	}
+
 	return
 }
 
@@ -191,25 +205,22 @@ func (c Client) _incrByInt(key string, delta *big.Int) (after *big.Int, err erro
 	if err == nil {
 		after, _ = floatAfter.Int(nil)
 	}
+
 	return
 }
 
-// INCR https://redis.io/commands/incr
 func (c Client) INCR(key string) (after *big.Int, err error) {
 	return c._incrByInt(key, big.NewInt(1))
 }
 
-// DECR https://redis.io/commands/decr
 func (c Client) DECR(key string) (after *big.Int, err error) {
 	return c._incrByInt(key, big.NewInt(-1))
 }
 
-// INRCBY https://redis.io/commands/incrby
 func (c Client) INCRBY(key string, delta *big.Int) (after *big.Int, err error) {
 	return c._incrByInt(key, delta)
 }
 
-// DECRBY https://redis.io/commands/decrby
 func (c Client) DECRBY(key string, delta *big.Int) (after *big.Int, err error) {
 	return c._incrByInt(key, new(big.Int).Neg(delta))
 }

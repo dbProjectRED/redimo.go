@@ -164,5 +164,4 @@ func TestSetModifiers(t *testing.T) {
 	members, err = c.SMEMBERS("s2")
 	assert.NoError(t, err)
 	assert.ElementsMatch(t, []string{"m1"}, members)
-
 }

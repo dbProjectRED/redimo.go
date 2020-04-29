@@ -12,6 +12,7 @@ func TestBasicHashes(t *testing.T) {
 	savedCount, err := c.HSET("k1", map[string]Value{"f1": StringValue{"v1"}, "f2": StringValue{"v2"}})
 	assert.NoError(t, err)
 	assert.EqualValues(t, 2, savedCount)
+
 	val, err := c.HGET("k1", "f1")
 	assert.NoError(t, err)
 	assert.Equal(t, StringValue{"v1"}, val)
@@ -100,7 +101,6 @@ func TestAtomicHashOps(t *testing.T) {
 	val, err = c.HGET("k1", "f9")
 	assert.NoError(t, err)
 	assert.Equal(t, StringValue{"v9"}, val)
-
 }
 
 func TestHashCounters(t *testing.T) {
@@ -108,11 +108,13 @@ func TestHashCounters(t *testing.T) {
 
 	after, err := c.HINCRBYFLOAT("k1", "f1", big.NewFloat(3.14))
 	assert.NoError(t, err)
+
 	f, _ := after.Float64()
 	assert.InDelta(t, 3.14, f, 0.001)
 
 	after, err = c.HINCRBYFLOAT("k1", "f1", big.NewFloat(-1.618))
 	assert.NoError(t, err)
+
 	f, _ = after.Float64()
 	assert.InDelta(t, 1.522, f, 0.001)
 
@@ -130,8 +132,10 @@ func TestHashCounters(t *testing.T) {
 
 	v, err := c.HGET("k1", "f2")
 	assert.NoError(t, err)
+
 	nval, ok := v.AsNumeric()
 	assert.True(t, ok)
+
 	n, _ := nval.Int64()
 	assert.Equal(t, n, int64(42))
 }

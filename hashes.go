@@ -23,22 +23,28 @@ func (c Client) HGET(key string, field string) (val Value, err error) {
 	if err == nil {
 		val = parseItem(resp.Item).val
 	}
+
 	return
 }
 
 func (c Client) HSET(key string, fieldValues map[string]Value) (savedCount int64, err error) {
-	var items []dynamodb.WriteRequest
+	items := make([]dynamodb.WriteRequest, len(fieldValues))
+	i := 0
+
 	for field, v := range fieldValues {
 		builder := newExpresionBuilder()
+
 		builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, v.toAV())
-		items = append(items, dynamodb.WriteRequest{
+
+		items[i] = dynamodb.WriteRequest{
 			PutRequest: &dynamodb.PutRequest{
 				Item: itemDef{
 					keyDef: keyDef{pk: key, sk: field},
 					val:    v,
 				}.eav(),
 			},
-		})
+		}
+		i++
 	}
 
 	requestMap := map[string][]dynamodb.WriteRequest{}
@@ -49,9 +55,11 @@ func (c Client) HSET(key string, fieldValues map[string]Value) (savedCount int64
 		resp, err := c.ddbClient.BatchWriteItemRequest(&dynamodb.BatchWriteItemInput{
 			RequestItems: requestMap,
 		}).Send(context.TODO())
+
 		if err != nil {
 			return savedCount, err
 		}
+
 		leftovers := len(resp.UnprocessedItems[c.table])
 		savedCount = savedCount + int64(attempting) - int64(leftovers)
 		requestMap = resp.UnprocessedItems
@@ -61,11 +69,14 @@ func (c Client) HSET(key string, fieldValues map[string]Value) (savedCount int64
 }
 
 func (c Client) HMSET(key string, fieldValues map[string]Value) (err error) {
-	var items []dynamodb.TransactWriteItem
+	items := make([]dynamodb.TransactWriteItem, len(fieldValues))
+	i := 0
+
 	for field, v := range fieldValues {
 		builder := newExpresionBuilder()
 		builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, v.toAV())
-		items = append(items, dynamodb.TransactWriteItem{
+
+		items[i] = dynamodb.TransactWriteItem{
 			Update: &dynamodb.Update{
 				ConditionExpression:       builder.conditionExpression(),
 				ExpressionAttributeNames:  builder.expressionAttributeNames(),
@@ -77,34 +88,40 @@ func (c Client) HMSET(key string, fieldValues map[string]Value) (err error) {
 				TableName:        aws.String(c.table),
 				UpdateExpression: builder.updateExpression(),
 			},
-		})
+		}
+		i++
 	}
+
 	_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
 		TransactItems: items,
 	}).Send(context.TODO())
+
 	return
 }
 
 func (c Client) HMGET(key string, fields ...string) (values []Value, err error) {
-	var items []dynamodb.TransactGetItem
-	for _, field := range fields {
-		items = append(items, dynamodb.TransactGetItem{Get: &dynamodb.Get{
+	items := make([]dynamodb.TransactGetItem, len(fields))
+	for i, field := range fields {
+		items[i] = dynamodb.TransactGetItem{Get: &dynamodb.Get{
 			Key: keyDef{
 				pk: key,
 				sk: field,
 			}.toAV(),
 			ProjectionExpression: aws.String(vk),
 			TableName:            aws.String(c.table),
-		}})
+		}}
 	}
+
 	resp, err := c.ddbClient.TransactGetItemsRequest(&dynamodb.TransactGetItemsInput{
 		TransactItems: items,
 	}).Send(context.TODO())
+
 	if err == nil {
 		for _, r := range resp.Responses {
 			values = append(values, parseItem(r.Item).val)
 		}
 	}
+
 	return
 }
 
@@ -118,9 +135,11 @@ func (c Client) HDEL(key string, fields ...string) (err error) {
 			}.toAV()},
 		}
 	}
+
 	requestMap := map[string][]dynamodb.WriteRequest{
 		c.table: deleteRequests,
 	}
+
 	for len(requestMap) > 0 {
 		resp, err := c.ddbClient.BatchWriteItemRequest(&dynamodb.BatchWriteItemInput{
 			RequestItems: requestMap,
@@ -128,8 +147,10 @@ func (c Client) HDEL(key string, fields ...string) (err error) {
 		if err != nil {
 			return err
 		}
+
 		requestMap = resp.UnprocessedItems
 	}
+
 	return
 }
 
@@ -146,19 +167,23 @@ func (c Client) HEXISTS(key string, field string) (exists bool, err error) {
 	if err == nil && len(resp.Item) > 0 {
 		exists = true
 	}
+
 	return
 }
 
 func (c Client) HGETALL(key string) (fieldValues map[string]Value, err error) {
 	fieldValues = make(map[string]Value)
 	hasMoreResults := true
+
 	var lastEvaluatedKey map[string]dynamodb.AttributeValue
+
 	for hasMoreResults {
 		builder := newExpresionBuilder()
 		builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
 		builder.values[pk] = dynamodb.AttributeValue{
 			S: aws.String(key),
 		}
+
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 			ConsistentRead:            aws.Bool(c.consistentReads),
 			ExclusiveStartKey:         lastEvaluatedKey,
@@ -167,19 +192,23 @@ func (c Client) HGETALL(key string) (fieldValues map[string]Value, err error) {
 			KeyConditionExpression:    builder.conditionExpression(),
 			TableName:                 aws.String(c.table),
 		}).Send(context.TODO())
+
 		if err != nil {
 			return fieldValues, err
 		}
+
 		for _, item := range resp.Items {
 			parsedItem := parseItem(item)
 			fieldValues[parsedItem.sk] = parsedItem.val
 		}
+
 		if len(resp.LastEvaluatedKey) > 0 {
 			lastEvaluatedKey = resp.LastEvaluatedKey
 		} else {
 			hasMoreResults = false
 		}
 	}
+
 	return
 }
 
@@ -196,9 +225,11 @@ func (c Client) HINCRBYFLOAT(key string, field string, delta *big.Float) (after 
 		TableName:        aws.String(c.table),
 		UpdateExpression: aws.String("ADD #val :delta"),
 	}).Send(context.TODO())
+
 	if err == nil {
 		after, _ = parseItem(resp.UpdateItemOutput.Attributes).val.AsNumeric()
 	}
+
 	return
 }
 
@@ -207,13 +238,17 @@ func (c Client) HINCRBY(key string, field string, delta *big.Int) (after *big.In
 	if err != nil {
 		return
 	}
+
 	after, _ = afterFloat.Int(nil)
+
 	return
 }
 
 func (c Client) HKEYS(key string) (keys []string, err error) {
 	hasMoreResults := true
+
 	var lastEvaluatedKey map[string]dynamodb.AttributeValue
+
 	for hasMoreResults {
 		builder := newExpresionBuilder()
 		builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
@@ -230,19 +265,23 @@ func (c Client) HKEYS(key string) (keys []string, err error) {
 			ProjectionExpression:      aws.String(sk),
 			Select:                    dynamodb.SelectSpecificAttributes,
 		}).Send(context.TODO())
+
 		if err != nil {
 			return keys, err
 		}
+
 		for _, item := range resp.Items {
 			parsedItem := parseItem(item)
 			keys = append(keys, parsedItem.sk)
 		}
+
 		if len(resp.LastEvaluatedKey) > 0 {
 			lastEvaluatedKey = resp.LastEvaluatedKey
 		} else {
 			hasMoreResults = false
 		}
 	}
+
 	return
 }
 
@@ -253,12 +292,15 @@ func (c Client) HVALS(key string) (values []Value, err error) {
 			values = append(values, v)
 		}
 	}
+
 	return
 }
 
 func (c Client) HLEN(key string) (count int64, err error) {
 	hasMoreResults := true
+
 	var lastEvaluatedKey map[string]dynamodb.AttributeValue
+
 	for hasMoreResults {
 		builder := newExpresionBuilder()
 		builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
@@ -274,16 +316,20 @@ func (c Client) HLEN(key string) (count int64, err error) {
 			TableName:                 aws.String(c.table),
 			Select:                    dynamodb.SelectCount,
 		}).Send(context.TODO())
+
 		if err != nil {
 			return count, err
 		}
-		count = count + aws.Int64Value(resp.ScannedCount)
+
+		count += aws.Int64Value(resp.ScannedCount)
+
 		if len(resp.LastEvaluatedKey) > 0 {
 			lastEvaluatedKey = resp.LastEvaluatedKey
 		} else {
 			hasMoreResults = false
 		}
 	}
+
 	return
 }
 
@@ -291,6 +337,7 @@ func (c Client) HSETNX(key string, field string, value Value) (ok bool, err erro
 	builder := newExpresionBuilder()
 	builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, value.toAV())
 	builder.condition(fmt.Sprintf("(attribute_not_exists(#%v))", pk), pk)
+
 	_, err = c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
 		ConditionExpression:       builder.conditionExpression(),
 		ExpressionAttributeNames:  builder.expressionAttributeNames(),
@@ -302,11 +349,14 @@ func (c Client) HSETNX(key string, field string, value Value) (ok bool, err erro
 		TableName:        aws.String(c.table),
 		UpdateExpression: builder.updateExpression(),
 	}).Send(context.TODO())
+
 	if conditionFailureError(err) {
 		return false, nil
 	}
+
 	if err != nil {
 		return false, err
 	}
+
 	return true, nil
 }

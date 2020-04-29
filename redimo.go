@@ -44,6 +44,7 @@ func (b *expressionBuilder) conditionExpression() *string {
 	if len(b.conditions) == 0 {
 		return nil
 	}
+
 	return aws.String(strings.Join(b.conditions, ","))
 }
 
@@ -51,10 +52,13 @@ func (b *expressionBuilder) expressionAttributeNames() map[string]string {
 	if len(b.keys) == 0 {
 		return nil
 	}
+
 	out := make(map[string]string)
+
 	for n := range b.keys {
 		out["#"+n] = n
 	}
+
 	return out
 }
 
@@ -62,10 +66,13 @@ func (b *expressionBuilder) expressionAttributeValues() map[string]dynamodb.Attr
 	if len(b.values) == 0 {
 		return nil
 	}
+
 	out := make(map[string]dynamodb.AttributeValue)
+
 	for k, v := range b.values {
 		out[":"+k] = v
 	}
+
 	return out
 }
 
@@ -73,10 +80,15 @@ func (b *expressionBuilder) updateExpression() *string {
 	if len(b.clauses) == 0 {
 		return nil
 	}
-	var clauses []string
+
+	clauses := make([]string, len(b.clauses))
+	i := 0
+
 	for k, v := range b.clauses {
-		clauses = append(clauses, k+" "+strings.Join(v, ", "))
+		clauses[i] = k + " " + strings.Join(v, ", ")
+		i++
 	}
+
 	return aws.String(strings.Join(clauses, " "))
 }
 
@@ -113,6 +125,7 @@ type itemDef struct {
 func (i itemDef) eav() map[string]dynamodb.AttributeValue {
 	eav := i.keyDef.toAV()
 	eav[vk] = i.val.toAV()
+
 	return eav
 }
 
@@ -125,12 +138,14 @@ func parseKey(avm map[string]dynamodb.AttributeValue) keyDef {
 
 func parseItem(avm map[string]dynamodb.AttributeValue) (item itemDef) {
 	item.keyDef = parseKey(avm)
-	if avm[vk].N != nil {
+
+	switch {
+	case avm[vk].N != nil:
 		num, _, _ := new(big.Float).Parse(aws.StringValue(avm[vk].N), 10)
 		item.val = NumericValue{bf: num}
-	} else if avm[vk].S != nil {
+	case avm[vk].S != nil:
 		item.val = StringValue{str: aws.StringValue(avm[vk].S)}
-	} else if avm[vk].B != nil {
+	case avm[vk].B != nil:
 		item.val = BytesValue{bytes: avm[vk].B}
 	}
 
@@ -152,6 +167,7 @@ func (flags Flags) has(flag Flag) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -159,6 +175,7 @@ func conditionFailureError(err error) bool {
 	if err == nil {
 		return false
 	}
+
 	if aerr, ok := err.(awserr.Error); ok {
 		switch aerr.Code() {
 		case dynamodb.ErrCodeConditionalCheckFailedException,
@@ -168,5 +185,6 @@ func conditionFailureError(err error) bool {
 			return true
 		}
 	}
+
 	return false
 }
