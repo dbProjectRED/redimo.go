@@ -2,6 +2,7 @@ package redimo
 
 import (
 	"fmt"
+	"log"
 	"math/big"
 	"strconv"
 	"strings"
@@ -193,7 +194,9 @@ func conditionFailureError(err error) bool {
 
 // c nnn n.nnnnnnnnnnnnnnnn
 func floatToLex(f float64) (s string) {
-	sn := fmt.Sprintf("%e", f)
+	sn := fmt.Sprintf("%0.17e", f)
+	log.Println(sn)
+
 	if !strings.HasPrefix(sn, "-") {
 		sn = "+" + sn
 	}
@@ -201,18 +204,24 @@ func floatToLex(f float64) (s string) {
 	parts := strings.Split(sn, "e")
 	mantissa, _ := strconv.ParseFloat(parts[0], 64)
 	exponent, _ := strconv.ParseInt(parts[1], 10, 64)
+
+	const expFlip = 999
+
+	const mantissaFlip = 10
+
 	switch {
 	case mantissa > 0 && exponent > 0:
 		parts = []string{"5", padExponent(exponent), padMantissa(mantissa)}
 	case mantissa > 0 && exponent < 0:
-		parts = []string{"4", padExponent(999 + exponent), padMantissa(mantissa)}
+		parts = []string{"4", padExponent(expFlip + exponent), padMantissa(mantissa)}
 	case mantissa == 0 && exponent == 0:
 		parts = []string{"3", padExponent(exponent), padMantissa(mantissa)}
 	case mantissa < 0 && exponent < 0:
-		parts = []string{"2", padExponent(exponent), padMantissa(10 + mantissa)}
+		parts = []string{"2", padExponent(exponent), padMantissa(mantissaFlip + mantissa)}
 	case mantissa < 0 && exponent > 0:
-		parts = []string{"1", padExponent(999 - exponent), padMantissa(10 + mantissa)}
+		parts = []string{"1", padExponent(expFlip - exponent), padMantissa(mantissaFlip + mantissa)}
 	}
+
 	return strings.Join(parts, " ")
 }
 
@@ -220,17 +229,21 @@ func padExponent(exponent int64) (s string) {
 	if exponent < 0 {
 		exponent = -exponent
 	}
+
 	s = strconv.Itoa(int(exponent))
+
 	for len(s) < 3 {
 		s = "0" + s
 	}
+
 	return
 }
 
 func padMantissa(mantissa float64) (s string) {
-	s = fmt.Sprintf("%f", mantissa)
+	s = fmt.Sprintf("%0.17f", mantissa)[0:17]
 	for len(s) < 18 {
-		s = s + "0"
+		s += "0"
 	}
+
 	return s
 }

@@ -74,6 +74,7 @@ func newConfig(t *testing.T) aws.Config {
 
 func Test_fToLex(t *testing.T) {
 	t.Parallel()
+
 	tests := []struct {
 		in  float64
 		out string
@@ -85,16 +86,15 @@ func Test_fToLex(t *testing.T) {
 		{in: 7.23e-302, out: "4 697 7.2300000000000000"},
 		{in: 0.0e0, out: "3 000 0.0000000000000000"},
 		{in: -4.25e-4, out: "2 004 5.7500000000000000"},
-		{in: -6.35e-4, out: "2 004 3.6500000000000000"},
-		{in: -6.35e-3, out: "2 003 3.6500000000000000"},
+		{in: -6.32e-4, out: "2 004 3.6800000000000000"},
+		{in: -6.34e-3, out: "2 003 3.6600000000000000"},
 		{in: -4.0e104, out: "1 895 6.0000000000000000"},
 		{in: -4.0e105, out: "1 894 6.0000000000000000"},
 		{in: -6.0e105, out: "1 894 4.0000000000000000"},
 	}
-	for _, tt := range tests {
 
+	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%e", tt.in), func(t *testing.T) {
-			t.Parallel()
 			assert.Equal(t, tt.out, floatToLex(tt.in), tt)
 		})
 	}
