@@ -1,7 +1,9 @@
 package redimo
 
 import (
+	"fmt"
 	"math/big"
+	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -187,4 +189,48 @@ func conditionFailureError(err error) bool {
 	}
 
 	return false
+}
+
+// c nnn n.nnnnnnnnnnnnnnnn
+func floatToLex(f float64) (s string) {
+	sn := fmt.Sprintf("%e", f)
+	if !strings.HasPrefix(sn, "-") {
+		sn = "+" + sn
+	}
+
+	parts := strings.Split(sn, "e")
+	mantissa, _ := strconv.ParseFloat(parts[0], 64)
+	exponent, _ := strconv.ParseInt(parts[1], 10, 64)
+	switch {
+	case mantissa > 0 && exponent > 0:
+		parts = []string{"5", padExponent(exponent), padMantissa(mantissa)}
+	case mantissa > 0 && exponent < 0:
+		parts = []string{"4", padExponent(999 + exponent), padMantissa(mantissa)}
+	case mantissa == 0 && exponent == 0:
+		parts = []string{"3", padExponent(exponent), padMantissa(mantissa)}
+	case mantissa < 0 && exponent < 0:
+		parts = []string{"2", padExponent(exponent), padMantissa(10 + mantissa)}
+	case mantissa < 0 && exponent > 0:
+		parts = []string{"1", padExponent(999 - exponent), padMantissa(10 + mantissa)}
+	}
+	return strings.Join(parts, " ")
+}
+
+func padExponent(exponent int64) (s string) {
+	if exponent < 0 {
+		exponent = -exponent
+	}
+	s = strconv.Itoa(int(exponent))
+	for len(s) < 3 {
+		s = "0" + s
+	}
+	return
+}
+
+func padMantissa(mantissa float64) (s string) {
+	s = fmt.Sprintf("%f", mantissa)
+	for len(s) < 18 {
+		s = s + "0"
+	}
+	return s
 }
