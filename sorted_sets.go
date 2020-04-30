@@ -10,10 +10,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
-func (c Client) ZADD(key string, scoredMembers map[string]float64, flags Flags) (count int64, err error) {
+func (c Client) ZADD(key string, scoredMembers map[string]float64, flags Flags) (savedCount int64, err error) {
 	for member, score := range scoredMembers {
 		builder := newExpresionBuilder()
-		builder.SET(fmt.Sprintf("#%v = :%v", sk2, sk2), sk2, StringValue{floatToLex(score)}.toAV())
+		builder.SET(fmt.Sprintf("#%v = :%v", sk2, sk2), sk2, StringValue{floatToLex(big.NewFloat(score))}.toAV())
 
 		if flags.has(IfNotExists) {
 			builder.condition(fmt.Sprintf("attribute_not_exists(#%v)", pk), pk)
@@ -41,7 +41,7 @@ func (c Client) ZADD(key string, scoredMembers map[string]float64, flags Flags) 
 		if err != nil {
 			return
 		}
-		count++
+		savedCount++
 	}
 
 	return
@@ -51,7 +51,7 @@ func (c Client) ZCARD(key string) (count int64, err error) {
 	return c.HLEN(key)
 }
 
-func (c Client) ZCOUNT(key string, min, max *big.Float) (count int64, err error) {
+func (c Client) ZCOUNT(key string, min, max float64) (count int64, err error) {
 	return
 }
 
@@ -83,7 +83,7 @@ func (c Client) ZRANGEBYLEX(key string, min, max string, offset, count int64) (m
 	return
 }
 
-func (c Client) ZRANGEBYSCORE(key string, min, max *big.Float, offset, count int64) (membersWithScores map[string]float64, err error) {
+func (c Client) ZRANGEBYSCORE(key string, min, max float64, offset, count int64) (membersWithScores map[string]float64, err error) {
 	return
 }
 
@@ -103,7 +103,7 @@ func (c Client) ZREMRANGEBYRANK(key string, start, stop int64) (count int64, err
 	return
 }
 
-func (c Client) ZREMRANGEBYSCORE(key string, min, max *big.Float) (count int64, err error) {
+func (c Client) ZREMRANGEBYSCORE(key string, min, max float64) (count int64, err error) {
 	return
 }
 
@@ -115,7 +115,7 @@ func (c Client) ZREVRANGEBYLEX(key string, min, max string, offset, count int64)
 	return
 }
 
-func (c Client) ZREVRANGEBYSCORE(key string, min, max *big.Float, offset, count int64) (membersWithScores map[string]float64, err error) {
+func (c Client) ZREVRANGEBYSCORE(key string, min, max float64, offset, count int64) (membersWithScores map[string]float64, err error) {
 	return
 }
 
@@ -135,7 +135,7 @@ func (c Client) ZSCORE(key string, member string) (score float64, ok bool, err e
 	}).Send(context.TODO())
 	if err == nil && len(resp.Item) > 0 {
 		ok = true
-		score = lexToFloat(aws.StringValue(resp.Item[sk2].S))
+		score, _ = lexToFloat(aws.StringValue(resp.Item[sk2].S)).Float64()
 	}
 
 	return

@@ -1,6 +1,7 @@
 package redimo
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,9 +10,9 @@ import (
 func TestBasicSortedSets(t *testing.T) {
 	c := newClient(t)
 
-	count, err := c.ZADD("z1", map[string]float64{"m1": 1, "m2": 2, "m3": 3}, Flags{})
+	count, err := c.ZADD("z1", map[string]float64{"m1": 1, "m2": 2, "m3": 3, "m4": math.Inf(+1)}, Flags{})
 	assert.NoError(t, err)
-	assert.Equal(t, int64(3), count)
+	assert.Equal(t, int64(4), count)
 
 	score, ok, err := c.ZSCORE("z1", "m2")
 	assert.NoError(t, err)
@@ -20,7 +21,7 @@ func TestBasicSortedSets(t *testing.T) {
 
 	count, err = c.ZCARD("z1")
 	assert.NoError(t, err)
-	assert.Equal(t, int64(3), count)
+	assert.Equal(t, int64(4), count)
 
 	_, ok, err = c.ZSCORE("z1", "nosuchmember")
 	assert.NoError(t, err)

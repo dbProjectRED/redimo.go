@@ -1,8 +1,6 @@
 package redimo
 
 import (
-	"fmt"
-	"log"
 	"math"
 	"math/big"
 	"strconv"
@@ -200,75 +198,83 @@ func conditionFailureError(err error) bool {
 	return false
 }
 
-const expFlip = 999
-const mantissaFlip = 10
+const expFlip = 9999
+const mantissaFlip = 1
 
-// c nnn n.nnnnnnnnnnnnnnnn
-func floatToLex(f float64) (s string) {
-	sn := fmt.Sprintf("%0.17e", f)
-	log.Println(sn)
+// ceeeemmmmmmmmmmmmmmmmm with the mantissa '0.' removed before big.Float guarantees < 1
+func floatToLex(f *big.Float) (s string) {
+	mantissa := new(big.Float)
+	exp := f.MantExp(mantissa)
 
-	if !strings.HasPrefix(sn, "-") {
-		sn = "+" + sn
-	}
-
-	parts := strings.Split(sn, "e")
-	mantissa, _ := strconv.ParseFloat(parts[0], 64)
-	exponent, _ := strconv.ParseInt(parts[1], 10, 64)
+	var c string
 
 	switch {
-	case mantissa > 0 && exponent >= 0:
-		parts = []string{"5", padExponent(exponent), padMantissa(mantissa)}
-	case mantissa > 0 && exponent < 0:
-		parts = []string{"4", padExponent(expFlip + exponent), padMantissa(mantissa)}
-	case mantissa == 0 && exponent == 0:
-		parts = []string{"3", padExponent(exponent), padMantissa(mantissa)}
-	case mantissa < 0 && exponent < 0:
-		parts = []string{"2", padExponent(-exponent), padMantissa(mantissaFlip + mantissa)}
-	case mantissa < 0 && exponent > 0:
-		parts = []string{"1", padExponent(expFlip - exponent), padMantissa(mantissaFlip + mantissa)}
+	case mantissa.Sign() > 0 && f.IsInf():
+		c = "6"
+		exp = 0
+		mantissa = big.NewFloat(0)
+	case mantissa.Sign() < 0 && f.IsInf():
+		c = "0"
+		exp = 0
+		mantissa = big.NewFloat(0)
+	case mantissa.Sign() > 0 && exp >= 0:
+		c = "5"
+	case mantissa.Sign() > 0 && exp < 0:
+		c = "4"
+		exp = expFlip + exp
+	case mantissa.Sign() == 0 && exp == 0:
+		c = "3"
+	case mantissa.Sign() < 0 && exp < 0:
+		c = "2"
+		exp = -exp
+
+		mantissa.Add(mantissa, big.NewFloat(mantissaFlip))
+	case mantissa.Sign() < 0 && exp >= 0:
+		c = "1"
+		exp = expFlip - exp
+
+		mantissa.Add(mantissa, big.NewFloat(mantissaFlip))
 	}
 
-	return strings.Join(parts, " ")
+	return strings.Join([]string{c, padExponent(exp), padMantissa(mantissa)}, "")
 }
 
-func lexToFloat(lex string) (f float64) {
-	parts := strings.Split(lex, " ")
-	mantissa, _ := strconv.ParseFloat(parts[2], 64)
-	exponent, _ := strconv.ParseInt(parts[1], 10, 64)
+func lexToFloat(lex string) (f *big.Float) {
+	exponent, _ := strconv.ParseInt(lex[1:5], 10, 64)
+	mantissa := new(big.Float)
+	mantissa, _, _ = mantissa.Parse("0."+lex[5:], 10)
 
-	switch parts[0] {
-	case "1":
-		//"1 894 6.0000000000000000"
-		return (mantissa - mantissaFlip) * math.Pow10(int(expFlip-exponent))
-	case "2":
-		return (mantissa - mantissaFlip) * math.Pow10(int(-exponent))
-	case "3":
-		return float64(0)
-	case "4":
-		return mantissa * math.Pow10(int(exponent-expFlip))
-	case "5":
-		return mantissa * math.Pow10(int(exponent))
+	switch lex[0] {
+	case '0':
+		return big.NewFloat(math.Inf(-1))
+	case '1':
+
+		return new(big.Float).SetMantExp(mantissa.Add(mantissa, big.NewFloat(-mantissaFlip)), int(expFlip-exponent))
+	case '2':
+		return new(big.Float).SetMantExp(mantissa.Add(mantissa, big.NewFloat(-mantissaFlip)), int(-exponent))
+	case '3':
+		return big.NewFloat(0)
+	case '4':
+		return new(big.Float).SetMantExp(mantissa, int(exponent-expFlip))
+	case '5':
+		return new(big.Float).SetMantExp(mantissa, int(exponent))
+	case '6':
+		return big.NewFloat(math.Inf(+1))
 	}
 
 	return
 }
 
-func padExponent(exponent int64) (s string) {
-	s = strconv.Itoa(int(exponent))
+func padExponent(exponent int) (s string) {
+	s = strconv.Itoa(exponent)
 
-	for len(s) < 3 {
+	for len(s) < 4 {
 		s = "0" + s
 	}
 
 	return
 }
 
-func padMantissa(mantissa float64) (s string) {
-	s = fmt.Sprintf("%0.17f", mantissa)[0:17]
-	for len(s) < 18 {
-		s += "0"
-	}
-
-	return s
+func padMantissa(mantissa *big.Float) (s string) {
+	return mantissa.Text('f', 17)[2:]
 }
