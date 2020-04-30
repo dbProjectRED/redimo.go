@@ -28,23 +28,21 @@ func (c Client) HGET(key string, field string) (val Value, err error) {
 }
 
 func (c Client) HSET(key string, fieldValues map[string]Value) (savedCount int64, err error) {
-	items := make([]dynamodb.WriteRequest, len(fieldValues))
-	i := 0
+	items := make([]dynamodb.WriteRequest, 0, len(fieldValues))
 
 	for field, v := range fieldValues {
 		builder := newExpresionBuilder()
 
 		builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, v.toAV())
 
-		items[i] = dynamodb.WriteRequest{
+		items = append(items, dynamodb.WriteRequest{
 			PutRequest: &dynamodb.PutRequest{
 				Item: itemDef{
 					keyDef: keyDef{pk: key, sk: field},
 					val:    v,
 				}.eav(),
 			},
-		}
-		i++
+		})
 	}
 
 	requestMap := map[string][]dynamodb.WriteRequest{}
@@ -69,14 +67,13 @@ func (c Client) HSET(key string, fieldValues map[string]Value) (savedCount int64
 }
 
 func (c Client) HMSET(key string, fieldValues map[string]Value) (err error) {
-	items := make([]dynamodb.TransactWriteItem, len(fieldValues))
-	i := 0
+	items := make([]dynamodb.TransactWriteItem, 0, len(fieldValues))
 
 	for field, v := range fieldValues {
 		builder := newExpresionBuilder()
 		builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, v.toAV())
 
-		items[i] = dynamodb.TransactWriteItem{
+		items = append(items, dynamodb.TransactWriteItem{
 			Update: &dynamodb.Update{
 				ConditionExpression:       builder.conditionExpression(),
 				ExpressionAttributeNames:  builder.expressionAttributeNames(),
@@ -88,8 +85,7 @@ func (c Client) HMSET(key string, fieldValues map[string]Value) (err error) {
 				TableName:        aws.String(c.table),
 				UpdateExpression: builder.updateExpression(),
 			},
-		}
-		i++
+		})
 	}
 
 	_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{

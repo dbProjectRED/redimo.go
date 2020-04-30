@@ -135,8 +135,7 @@ func (c Client) MSETNX(data map[string]Value) (ok bool, err error) {
 }
 
 func (c Client) _mset(data map[string]Value, flags Flags) (ok bool, err error) {
-	inputs := make([]dynamodb.TransactWriteItem, len(data))
-	i := 0
+	inputs := make([]dynamodb.TransactWriteItem, 0, len(data))
 
 	for k, v := range data {
 		builder := newExpresionBuilder()
@@ -147,7 +146,7 @@ func (c Client) _mset(data map[string]Value, flags Flags) (ok bool, err error) {
 
 		builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, v.toAV())
 
-		inputs[i] = dynamodb.TransactWriteItem{
+		inputs = append(inputs, dynamodb.TransactWriteItem{
 			Update: &dynamodb.Update{
 				ConditionExpression:       builder.conditionExpression(),
 				ExpressionAttributeNames:  builder.expressionAttributeNames(),
@@ -159,8 +158,7 @@ func (c Client) _mset(data map[string]Value, flags Flags) (ok bool, err error) {
 				TableName:        aws.String(c.table),
 				UpdateExpression: builder.updateExpression(),
 			},
-		}
-		i++
+		})
 	}
 
 	_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{

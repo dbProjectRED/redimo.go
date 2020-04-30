@@ -85,12 +85,10 @@ func (b *expressionBuilder) updateExpression() *string {
 		return nil
 	}
 
-	clauses := make([]string, len(b.clauses))
-	i := 0
+	clauses := make([]string, 0, len(b.clauses))
 
 	for k, v := range b.clauses {
-		clauses[i] = k + " " + strings.Join(v, ", ")
-		i++
+		clauses = append(clauses, k+" "+strings.Join(v, ", "))
 	}
 
 	return aws.String(strings.Join(clauses, " "))
@@ -229,6 +227,7 @@ func lexToFloat(lex string) (f float64) {
 	parts := strings.Split(lex, " ")
 	mantissa, _ := strconv.ParseFloat(parts[2], 64)
 	exponent, _ := strconv.ParseInt(parts[1], 10, 64)
+
 	switch parts[0] {
 	case "1":
 		//"1 894 6.0000000000000000"
@@ -242,6 +241,7 @@ func lexToFloat(lex string) (f float64) {
 	case "5":
 		return mantissa * math.Pow10(int(exponent))
 	}
+
 	return
 }
 
