@@ -1,13 +1,54 @@
 package redimo
 
-import "math/big"
+import (
+	"context"
+	"fmt"
+	"math/big"
+	"strings"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+)
 
 func (c Client) ZADD(key string, scoredMembers map[string]float64, flags Flags) (count int64, err error) {
+	for member, score := range scoredMembers {
+		builder := newExpresionBuilder()
+		builder.SET(fmt.Sprintf("#%v = :%v", sk2, sk2), sk2, StringValue{floatToLex(score)}.toAV())
+
+		if flags.has(IfNotExists) {
+			builder.condition(fmt.Sprintf("attribute_not_exists(#%v)", pk), pk)
+		}
+
+		if flags.has(IfAlreadyExists) {
+			builder.condition(fmt.Sprintf("attribute_exists(#%v)", pk), pk)
+		}
+
+		_, err = c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
+			ConditionExpression:       builder.conditionExpression(),
+			ExpressionAttributeNames:  builder.expressionAttributeNames(),
+			ExpressionAttributeValues: builder.expressionAttributeValues(),
+			UpdateExpression:          builder.updateExpression(),
+			Key: keyDef{
+				pk: key,
+				sk: member,
+			}.toAV(),
+			TableName: aws.String(c.table),
+		}).Send(context.TODO())
+		if conditionFailureError(err) {
+			continue
+		}
+
+		if err != nil {
+			return
+		}
+		count++
+	}
+
 	return
 }
 
 func (c Client) ZCARD(key string) (count int64, err error) {
-	return
+	return c.HLEN(key)
 }
 
 func (c Client) ZCOUNT(key string, min, max *big.Float) (count int64, err error) {
@@ -83,6 +124,20 @@ func (c Client) ZREVRANK(key string, member string) (rank int64, ok bool, err er
 }
 
 func (c Client) ZSCORE(key string, member string) (score float64, ok bool, err error) {
+	resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
+		ConsistentRead: aws.Bool(c.consistentReads),
+		Key: keyDef{
+			pk: key,
+			sk: member,
+		}.toAV(),
+		ProjectionExpression: aws.String(strings.Join([]string{sk2}, ", ")),
+		TableName:            aws.String(c.table),
+	}).Send(context.TODO())
+	if err == nil && len(resp.Item) > 0 {
+		ok = true
+		score = lexToFloat(aws.StringValue(resp.Item[sk2].S))
+	}
+
 	return
 }
 

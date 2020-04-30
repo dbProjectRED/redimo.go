@@ -21,6 +21,7 @@ type Client struct {
 
 const pk = "pk"
 const sk = "sk"
+const sk2 = "sk2"
 const vk = "val"
 const defaultSK = "/"
 
@@ -104,12 +105,13 @@ func newExpresionBuilder() expressionBuilder {
 }
 
 type keyDef struct {
-	pk string
-	sk string
+	pk  string
+	sk  string
+	sk2 string
 }
 
 func (k keyDef) toAV() map[string]dynamodb.AttributeValue {
-	return map[string]dynamodb.AttributeValue{
+	m := map[string]dynamodb.AttributeValue{
 		pk: {
 			S: aws.String(k.pk),
 		},
@@ -117,6 +119,13 @@ func (k keyDef) toAV() map[string]dynamodb.AttributeValue {
 			S: aws.String(k.sk),
 		},
 	}
+	if k.sk2 != "" {
+		m[sk2] = dynamodb.AttributeValue{
+			S: aws.String(k.sk2),
+		}
+	}
+
+	return m
 }
 
 type itemDef struct {
@@ -208,7 +217,7 @@ func floatToLex(f float64) (s string) {
 	exponent, _ := strconv.ParseInt(parts[1], 10, 64)
 
 	switch {
-	case mantissa > 0 && exponent > 0:
+	case mantissa > 0 && exponent >= 0:
 		parts = []string{"5", padExponent(exponent), padMantissa(mantissa)}
 	case mantissa > 0 && exponent < 0:
 		parts = []string{"4", padExponent(expFlip + exponent), padMantissa(mantissa)}

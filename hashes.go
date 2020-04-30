@@ -31,10 +31,6 @@ func (c Client) HSET(key string, fieldValues map[string]Value) (savedCount int64
 	items := make([]dynamodb.WriteRequest, 0, len(fieldValues))
 
 	for field, v := range fieldValues {
-		builder := newExpresionBuilder()
-
-		builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, v.toAV())
-
 		items = append(items, dynamodb.WriteRequest{
 			PutRequest: &dynamodb.PutRequest{
 				Item: itemDef{

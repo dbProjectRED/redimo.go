@@ -20,19 +20,38 @@ func newClient(t *testing.T) Client {
 	name := uuid.New().String()
 	dynamoService := dynamodb.New(newConfig(t))
 	_, err := dynamoService.CreateTableRequest(&dynamodb.CreateTableInput{
-		TableName: aws.String(name),
 		AttributeDefinitions: []dynamodb.AttributeDefinition{
 			{AttributeName: aws.String("pk"), AttributeType: "S"},
 			{AttributeName: aws.String("sk"), AttributeType: "S"},
+			{AttributeName: aws.String("sk2"), AttributeType: "S"},
 		},
+		BillingMode:            "",
+		GlobalSecondaryIndexes: nil,
 		KeySchema: []dynamodb.KeySchemaElement{
 			{AttributeName: aws.String("pk"), KeyType: dynamodb.KeyTypeHash},
 			{AttributeName: aws.String("sk"), KeyType: dynamodb.KeyTypeRange},
+		},
+		LocalSecondaryIndexes: []dynamodb.LocalSecondaryIndex{
+			{
+				IndexName: aws.String("lsi_sk2"),
+				KeySchema: []dynamodb.KeySchemaElement{
+					{AttributeName: aws.String("pk"), KeyType: dynamodb.KeyTypeHash},
+					{AttributeName: aws.String("sk2"), KeyType: dynamodb.KeyTypeRange},
+				},
+				Projection: &dynamodb.Projection{
+					NonKeyAttributes: nil,
+					ProjectionType:   dynamodb.ProjectionTypeKeysOnly,
+				},
+			},
 		},
 		ProvisionedThroughput: &dynamodb.ProvisionedThroughput{
 			ReadCapacityUnits:  aws.Int64(1),
 			WriteCapacityUnits: aws.Int64(1),
 		},
+		SSESpecification:    nil,
+		StreamSpecification: nil,
+		TableName:           aws.String(name),
+		Tags:                nil,
 	}).Send(context.TODO())
 	assert.NoError(t, err)
 
@@ -85,6 +104,7 @@ func Test_fToLex(t *testing.T) {
 		{in: 8.4e-7, out: "4 992 8.4000000000000000"},
 		{in: 7.23e-7, out: "4 992 7.2300000000000000"},
 		{in: 7.23e-302, out: "4 697 7.2300000000000000"},
+		{in: 42, out: "5 001 4.2000000000000000"},
 		{in: 0.0e0, out: "3 000 0.0000000000000000"},
 		{in: -4.25e-4, out: "2 004 5.7500000000000000"},
 		{in: -6.32e-4, out: "2 004 3.6800000000000000"},
