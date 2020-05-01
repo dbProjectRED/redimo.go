@@ -38,4 +38,22 @@ func TestBasicSortedSets(t *testing.T) {
 	count, err = c.ZCOUNT("z1", math.Inf(-1), math.Inf(+1))
 	assert.NoError(t, err)
 	assert.Equal(t, int64(4), count)
+
+	newScore, err := c.ZINCRBY("z1", "m2", 0.5)
+	assert.NoError(t, err)
+	assert.InDelta(t, 2.5, newScore, 0.001)
+
+	score, ok, err = c.ZSCORE("z1", "m2")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, 2.5, score)
+
+	newScore, err = c.ZINCRBY("zNew", "mNew", 0.5)
+	assert.NoError(t, err)
+	assert.InDelta(t, 0.5, newScore, 0.001)
+
+	score, ok, err = c.ZSCORE("zNew", "mNew")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, 0.5, score)
 }
