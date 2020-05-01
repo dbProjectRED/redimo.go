@@ -48,7 +48,7 @@ func (b *expressionBuilder) conditionExpression() *string {
 		return nil
 	}
 
-	return aws.String(strings.Join(b.conditions, ","))
+	return aws.String(strings.Join(b.conditions, " AND "))
 }
 
 func (b *expressionBuilder) expressionAttributeNames() map[string]string {

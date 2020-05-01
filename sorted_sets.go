@@ -10,8 +10,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
-func (c Client) ZADD(key string, scoredMembers map[string]float64, flags Flags) (savedCount int64, err error) {
-	for member, score := range scoredMembers {
+func (c Client) ZADD(key string, membersWithScores map[string]float64, flags Flags) (savedCount int64, err error) {
+	for member, score := range membersWithScores {
 		builder := newExpresionBuilder()
 		builder.SET(fmt.Sprintf("#%v = :%v", sk2, sk2), sk2, StringValue{floatToLex(big.NewFloat(score))}.toAV())
 
@@ -51,7 +51,43 @@ func (c Client) ZCARD(key string) (count int64, err error) {
 	return c.HLEN(key)
 }
 
-func (c Client) ZCOUNT(key string, min, max float64) (count int64, err error) {
+func (c Client) ZCOUNT(key string, minScore, maxScore float64) (count int64, err error) {
+	builder := newExpresionBuilder()
+	builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
+	builder.values[pk] = StringValue{key}.toAV()
+	builder.condition(fmt.Sprintf("#%v BETWEEN :min AND :max", sk2), sk2)
+	builder.values["min"] = StringValue{floatToLex(big.NewFloat(minScore))}.toAV()
+	builder.values["max"] = StringValue{floatToLex(big.NewFloat(maxScore))}.toAV()
+	hasMoreResults := true
+
+	var lastEvaluatedKey map[string]dynamodb.AttributeValue
+
+	for hasMoreResults {
+		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
+			ConsistentRead:            aws.Bool(c.consistentReads),
+			ExclusiveStartKey:         lastEvaluatedKey,
+			ExpressionAttributeNames:  builder.expressionAttributeNames(),
+			ExpressionAttributeValues: builder.expressionAttributeValues(),
+			IndexName:                 aws.String("lsi_sk2"),
+			KeyConditionExpression:    builder.conditionExpression(),
+			ScanIndexForward:          aws.Bool(true),
+			Select:                    dynamodb.SelectCount,
+			TableName:                 aws.String(c.table),
+		}).Send(context.TODO())
+
+		if err != nil {
+			return count, err
+		}
+
+		count += aws.Int64Value(resp.Count)
+
+		if len(resp.LastEvaluatedKey) > 0 {
+			lastEvaluatedKey = resp.LastEvaluatedKey
+		} else {
+			hasMoreResults = false
+		}
+	}
+
 	return
 }
 
@@ -83,7 +119,7 @@ func (c Client) ZRANGEBYLEX(key string, min, max string, offset, count int64) (m
 	return
 }
 
-func (c Client) ZRANGEBYSCORE(key string, min, max float64, offset, count int64) (membersWithScores map[string]float64, err error) {
+func (c Client) ZRANGEBYSCORE(key string, min, max float64, minExclusive, maxExclusive bool, offset, count int64) (membersWithScores map[string]float64, err error) {
 	return
 }
 
