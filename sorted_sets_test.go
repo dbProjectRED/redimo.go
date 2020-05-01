@@ -130,4 +130,12 @@ func TestSortedSetPops(t *testing.T) {
 	_, ok, err = c.ZSCORE("z1", "m2")
 	assert.NoError(t, err)
 	assert.False(t, ok)
+
+	membersWithScores, err = c.ZPOPMIN("z1", 1000)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m3": 3, "m4": 4, "m5": 5, "m6": 6, "m7": 7}, membersWithScores)
+
+	count, err = c.ZCARD("z1")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(0), count)
 }
