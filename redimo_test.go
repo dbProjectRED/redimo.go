@@ -94,7 +94,7 @@ func newConfig(t *testing.T) aws.Config {
 	return cfg
 }
 
-func Test_fToLex(t *testing.T) {
+func TestFloatLexConversions(t *testing.T) {
 	t.Parallel()
 
 	for i := 0; i < 100; i++ {
@@ -118,8 +118,8 @@ func Test_fToLex(t *testing.T) {
 
 func checkFloat(t *testing.T, rfloat *big.Float) {
 	lex := floatToLex(rfloat)
-	t.Log(lex)
 	parsed := lexToFloat(lex)
+	assert.Equal(t, 22, len(lex))
 
 	expected, _ := rfloat.Float64()
 	actual, _ := parsed.Float64()
