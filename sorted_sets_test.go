@@ -48,6 +48,26 @@ func TestBasicSortedSets(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, 2.5, score)
 
+	count, err = c.ZREM("z1", "m2", "m3", "nosuchmember")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), count)
+
+	count, err = c.ZCARD("z1")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), count)
+
+	_, ok, err = c.ZSCORE("z1", "nosuchmember")
+	assert.NoError(t, err)
+	assert.False(t, ok)
+
+	_, ok, err = c.ZSCORE("z1", "m2")
+	assert.NoError(t, err)
+	assert.False(t, ok)
+
+	_, ok, err = c.ZSCORE("z1", "m3")
+	assert.NoError(t, err)
+	assert.False(t, ok)
+
 	newScore, err = c.ZINCRBY("zNew", "mNew", 0.5)
 	assert.NoError(t, err)
 	assert.InDelta(t, 0.5, newScore, 0.001)

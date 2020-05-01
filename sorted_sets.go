@@ -98,13 +98,16 @@ func (c Client) ZINCRBY(key string, member string, delta float64) (newScore floa
 		if err != nil {
 			return newScore, err
 		}
+
 		newScore = oldScore + delta
 		builder := newExpresionBuilder()
 		builder.SET(fmt.Sprintf("#%v = :%v", sk2, sk2), sk2, StringValue{floatToLex(big.NewFloat(newScore))}.toAV())
+
 		if ok {
 			builder.condition(fmt.Sprintf("#%v = :existingScore", sk2), sk2)
 			builder.values["existingScore"] = StringValue{floatToLex(big.NewFloat(oldScore))}.toAV()
 		}
+
 		_, err = c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
 			ConditionExpression:       builder.conditionExpression(),
 			ExpressionAttributeNames:  builder.expressionAttributeNames(),
@@ -116,15 +119,19 @@ func (c Client) ZINCRBY(key string, member string, delta float64) (newScore floa
 			TableName:        aws.String(c.table),
 			UpdateExpression: builder.updateExpression(),
 		}).Send(context.TODO())
+
 		if conditionFailureError(err) {
 			tries++
 			continue
 		}
+
 		if err != nil {
 			return newScore, err
 		}
+
 		return newScore, err
 	}
+
 	return newScore, fmt.Errorf("too much contention on %v / %v", key, member)
 }
 
@@ -161,7 +168,31 @@ func (c Client) ZRANK(key string, member string) (rank int64, ok bool, err error
 }
 
 func (c Client) ZREM(key string, members ...string) (count int64, err error) {
-	return
+	for _, member := range members {
+		builder := newExpresionBuilder()
+		builder.condition(fmt.Sprintf("attribute_exists(#%v)", pk), pk)
+
+		_, err = c.ddbClient.DeleteItemRequest(&dynamodb.DeleteItemInput{
+			ConditionExpression:       builder.conditionExpression(),
+			ExpressionAttributeNames:  builder.expressionAttributeNames(),
+			ExpressionAttributeValues: builder.expressionAttributeValues(),
+			Key: keyDef{
+				pk: key,
+				sk: member,
+			}.toAV(),
+			TableName: aws.String(c.table),
+		}).Send(context.TODO())
+		if conditionFailureError(err) {
+			continue
+		}
+
+		if err != nil {
+			return count, err
+		}
+		count++
+	}
+
+	return count, nil
 }
 
 func (c Client) ZREMRANGEBYLEX(key string, min, max string) (count int64, err error) {
