@@ -77,3 +77,57 @@ func TestBasicSortedSets(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, 0.5, score)
 }
+
+func TestSortedSetPops(t *testing.T) {
+	c := newClient(t)
+
+	count, err := c.ZADD("z1", map[string]float64{
+		"m1": 1,
+		"m2": 2,
+		"m3": 3,
+		"m4": 4,
+		"m5": 5,
+		"m6": 6,
+		"m7": 7,
+		"m8": 8,
+		"m9": 9,
+	}, Flags{})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(9), count)
+
+	count, err = c.ZCARD("z1")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(9), count)
+
+	membersWithScores, err := c.ZPOPMAX("z1", 2)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m9": 9, "m8": 8}, membersWithScores)
+
+	count, err = c.ZCARD("z1")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(7), count)
+
+	_, ok, err := c.ZSCORE("z1", "m9")
+	assert.NoError(t, err)
+	assert.False(t, ok)
+
+	_, ok, err = c.ZSCORE("z1", "m8")
+	assert.NoError(t, err)
+	assert.False(t, ok)
+
+	membersWithScores, err = c.ZPOPMIN("z1", 2)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m1": 1, "m2": 2}, membersWithScores)
+
+	count, err = c.ZCARD("z1")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(5), count)
+
+	_, ok, err = c.ZSCORE("z1", "m1")
+	assert.NoError(t, err)
+	assert.False(t, ok)
+
+	_, ok, err = c.ZSCORE("z1", "m2")
+	assert.NoError(t, err)
+	assert.False(t, ok)
+}

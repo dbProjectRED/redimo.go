@@ -140,8 +140,9 @@ func (i itemDef) eav() map[string]dynamodb.AttributeValue {
 
 func parseKey(avm map[string]dynamodb.AttributeValue) keyDef {
 	return keyDef{
-		pk: aws.StringValue(avm[pk].S),
-		sk: aws.StringValue(avm[sk].S),
+		pk:  aws.StringValue(avm[pk].S),
+		sk:  aws.StringValue(avm[sk].S),
+		sk2: aws.StringValue(avm[sk2].S),
 	}
 }
 
