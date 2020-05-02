@@ -250,7 +250,7 @@ func lexToFloat(lex string) (f *big.Float) {
 	//ceeeemmmmmmmmmmmmmmmmm
 	//01234567...
 	exponent, _ := strconv.ParseInt(lex[1:5], 10, 64)
-	mantissa, _, _ := new(big.Float).Parse("0."+lex[5:], 10)
+	mantissa, _, _ := new(big.Float).Parse("0."+lex[5:22], 10)
 
 	switch lex[0] {
 	case '0':

@@ -118,7 +118,7 @@ func TestFloatLexConversions(t *testing.T) {
 
 func checkFloat(t *testing.T, rfloat *big.Float) {
 	lex := floatToLex(rfloat)
-	parsed := lexToFloat(lex)
+	parsed := lexToFloat(lex + "anything else")
 	assert.Equal(t, 22, len(lex))
 
 	expected, _ := rfloat.Float64()
