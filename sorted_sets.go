@@ -315,11 +315,89 @@ func (c Client) _zRangeBetweenScores(key string, start string, stop string, forw
 }
 
 func (c Client) ZRANGEBYLEX(key string, min, max string, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return
+	return c._zGeneralRange(key, min, max, offset, count, true, sk)
 }
 
 func (c Client) ZRANGEBYSCORE(key string, min, max float64, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return
+	return c._zGeneralRange(key, floatToLex(big.NewFloat(min)), floatToLex(big.NewFloat(max)), offset, count, true, sk2)
+}
+
+func (c Client) _zGeneralRange(key string,
+	start string, stop string,
+	offset int64, count int64,
+	forward bool, attribute string) (membersWithScores map[string]float64, err error) {
+	membersWithScores = make(map[string]float64)
+	index := int64(0)
+	remainingCount := count
+	hasMoreResults := true
+
+	var lastKey map[string]dynamodb.AttributeValue
+
+	var indexName *string
+
+	if attribute == sk2 {
+		indexName = aws.String("lsi_sk2")
+	}
+
+	for hasMoreResults {
+		var queryLimit *int64
+		if remainingCount > 0 {
+			queryLimit = aws.Int64(remainingCount + offset - index)
+		}
+
+		builder := newExpresionBuilder()
+		builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
+		builder.values[pk] = StringValue{key}.toAV()
+
+		if start != "" {
+			builder.values["start"] = StringValue{start}.toAV()
+		}
+
+		if stop != "" {
+			builder.values["stop"] = StringValue{stop}.toAV()
+		}
+
+		switch {
+		case start != "" && stop != "":
+			builder.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", attribute), attribute)
+		case start != "":
+			builder.condition(fmt.Sprintf("#%v >= :start", attribute), attribute)
+		case stop != "":
+			builder.condition(fmt.Sprintf("#%v <= :stop", attribute), attribute)
+		}
+
+		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
+			ConsistentRead:            aws.Bool(c.consistentReads),
+			ExclusiveStartKey:         lastKey,
+			ExpressionAttributeNames:  builder.expressionAttributeNames(),
+			ExpressionAttributeValues: builder.expressionAttributeValues(),
+			IndexName:                 indexName,
+			KeyConditionExpression:    builder.conditionExpression(),
+			Limit:                     queryLimit,
+			ScanIndexForward:          aws.Bool(forward),
+			TableName:                 aws.String(c.table),
+		}).Send(context.TODO())
+		if err != nil {
+			return membersWithScores, err
+		}
+
+		for _, item := range resp.Items {
+			if index >= offset {
+				pi := parseItem(item)
+				membersWithScores[pi.sk], _ = lexToFloat(pi.sk2).Float64()
+				remainingCount--
+			}
+			index++
+		}
+
+		if len(resp.LastEvaluatedKey) > 0 && remainingCount > 0 {
+			lastKey = resp.LastEvaluatedKey
+		} else {
+			hasMoreResults = false
+		}
+	}
+
+	return membersWithScores, nil
 }
 
 func (c Client) ZRANK(key string, member string) (rank int64, ok bool, err error) {
@@ -370,12 +448,12 @@ func (c Client) ZREVRANGE(key string, start, stop int64) (membersWithScores map[
 	return c._zrange(key, start, stop, false)
 }
 
-func (c Client) ZREVRANGEBYLEX(key string, min, max string, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return
+func (c Client) ZREVRANGEBYLEX(key string, max, min string, offset, count int64) (membersWithScores map[string]float64, err error) {
+	return c._zGeneralRange(key, min, max, offset, count, false, sk)
 }
 
-func (c Client) ZREVRANGEBYSCORE(key string, min, max float64, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return
+func (c Client) ZREVRANGEBYSCORE(key string, max, min float64, offset, count int64) (membersWithScores map[string]float64, err error) {
+	return c._zGeneralRange(key, floatToLex(big.NewFloat(min)), floatToLex(big.NewFloat(max)), offset, count, false, sk2)
 }
 
 func (c Client) ZREVRANK(key string, member string) (rank int64, ok bool, err error) {

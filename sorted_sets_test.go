@@ -218,4 +218,52 @@ func TestSortedSetRanges(t *testing.T) {
 	set, err = c.ZREVRANGE("z1", 0, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, fullSet, set)
+
+	set, err = c.ZRANGEBYLEX("z1", "m2", "m6", 0, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m2": 2, "m3": 3, "m4": 4, "m5": 5, "m6": 6}, set)
+
+	set, err = c.ZREVRANGEBYLEX("z1", "m8", "m5", 0, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m8": 8, "m7": 7, "m6": 6, "m5": 5}, set)
+
+	set, err = c.ZRANGEBYSCORE("z1", 2, 6, 0, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m2": 2, "m3": 3, "m4": 4, "m5": 5, "m6": 6}, set)
+
+	set, err = c.ZREVRANGEBYSCORE("z1", 8, 5, 0, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m8": 8, "m7": 7, "m6": 6, "m5": 5}, set)
+
+	set, err = c.ZRANGEBYLEX("z1", "m2", "m6", 2, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m4": 4, "m5": 5, "m6": 6}, set)
+
+	set, err = c.ZREVRANGEBYSCORE("z1", 8, 5, 3, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m5": 5}, set)
+
+	set, err = c.ZREVRANGEBYLEX("z1", "m8", "m5", 0, 3)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m8": 8, "m7": 7, "m6": 6}, set)
+
+	set, err = c.ZRANGEBYLEX("z1", "m2", "m6", 2, 2)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m4": 4, "m5": 5}, set)
+
+	set, err = c.ZRANGEBYSCORE("z1", math.Inf(-1), 3, 0, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m1": 1, "m2": 2, "m3": 3}, set)
+
+	set, err = c.ZREVRANGEBYLEX("z1", "m3", "", 0, 3)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m3": 3, "m2": 2, "m1": 1}, set)
+
+	set, err = c.ZREVRANGEBYLEX("z1", "m3", "", 0, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m3": 3}, set)
+
+	set, err = c.ZREVRANGEBYLEX("z1", "m3", "", 1, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m2": 2}, set)
 }
