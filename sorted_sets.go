@@ -203,112 +203,25 @@ func (c Client) ZRANGE(key string, start, stop int64) (membersWithScores map[str
 }
 
 func (c Client) _zrange(key string, start int64, stop int64, forward bool) (membersWithScores map[string]float64, err error) {
-	startScore, okStart, err := c._zFullScoreByRank(key, start, forward)
-	if err != nil {
-		return
+	if start < 0 && stop < 0 {
+		return c._zGeneralRange(key, "", "", -stop-1, -start, !forward, sk2)
 	}
 
-	stopScore, okStop, err := c._zFullScoreByRank(key, stop, forward)
-
-	if err != nil || !okStart || !okStop {
-		return
-	}
-
-	return c._zRangeBetweenScores(key, startScore, stopScore, forward)
-}
-
-func (c Client) _zFullScoreByRank(key string, rank int64, forward bool) (fullScore string, ok bool, err error) {
-	runningLimit := int64(0)
-	if rank < 0 {
-		runningLimit = -rank
-		forward = !forward
-	} else {
-		runningLimit = rank + 1
-	}
-
-	var lastKey map[string]dynamodb.AttributeValue
-
-	hasMoreResults := true
-
-	for hasMoreResults {
-		builder := newExpresionBuilder()
-		builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
-		builder.values[pk] = StringValue{key}.toAV()
-		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
-			ExclusiveStartKey:         lastKey,
-			ExpressionAttributeNames:  builder.expressionAttributeNames(),
-			ExpressionAttributeValues: builder.expressionAttributeValues(),
-			IndexName:                 aws.String("lsi_sk2"),
-			KeyConditionExpression:    builder.conditionExpression(),
-			Limit:                     aws.Int64(runningLimit),
-			ScanIndexForward:          aws.Bool(forward),
-			TableName:                 aws.String(c.table),
-		}).Send(context.TODO())
-
-		if err != nil {
-			return fullScore, false, err
-		}
-
-		if int64(len(resp.Items)) == runningLimit {
-			lastItem := parseItem(resp.Items[len(resp.Items)-1])
-			return lastItem.sk2, true, nil
-		}
-
-		if len(resp.LastEvaluatedKey) > 0 {
-			lastKey = resp.LastEvaluatedKey
-			runningLimit -= int64(len(resp.Items))
-		} else {
-			hasMoreResults = false
-		}
-	}
-
-	ok = false
-
-	return
-}
-
-func (c Client) _zRangeBetweenScores(key string, start string, stop string, forward bool) (membersWithScores map[string]float64, err error) {
-	membersWithScores = make(map[string]float64)
-
-	var lastKey map[string]dynamodb.AttributeValue
-
-	hasMoreResults := true
-
-	for hasMoreResults {
-		builder := newExpresionBuilder()
-		builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
-
-		if forward {
-			builder.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", sk2), sk2)
-		} else {
-			builder.condition(fmt.Sprintf("#%v BETWEEN :stop AND :start", sk2), sk2)
-		}
-
-		builder.values["start"] = StringValue{start}.toAV()
-		builder.values["stop"] = StringValue{stop}.toAV()
-		builder.values[pk] = StringValue{key}.toAV()
-		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
-			ExclusiveStartKey:         lastKey,
-			ExpressionAttributeNames:  builder.expressionAttributeNames(),
-			ExpressionAttributeValues: builder.expressionAttributeValues(),
-			IndexName:                 aws.String("lsi_sk2"),
-			KeyConditionExpression:    builder.conditionExpression(),
-			ScanIndexForward:          aws.Bool(forward),
-			TableName:                 aws.String(c.table),
-		}).Send(context.TODO())
-
+	if start > 0 && stop < 0 {
+		lastScore, err := c._zGeneralRange(key, "", "", -stop-1, 1, !forward, sk2)
 		if err != nil {
 			return membersWithScores, err
 		}
 
-		if len(resp.LastEvaluatedKey) == 0 {
-			hasMoreResults = false
-		}
+		return c._zGeneralRange(key, "", floatToLex(big.NewFloat(floatValues(lastScore)[0])), start, 0, forward, sk2)
+	}
 
-		for _, item := range resp.Items {
-			pi := parseItem(item)
-			membersWithScores[pi.sk], _ = lexToFloat(pi.sk2).Float64()
-		}
+	return c._zGeneralRange(key, "", "", start, stop-start+1, forward, sk2)
+}
+
+func floatValues(floatValuedMap map[string]float64) (values []float64) {
+	for _, v := range floatValuedMap {
+		values = append(values, v)
 	}
 
 	return

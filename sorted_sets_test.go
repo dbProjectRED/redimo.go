@@ -2,7 +2,6 @@ package redimo
 
 import (
 	"math"
-	"math/big"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -158,46 +157,6 @@ func TestSortedSetRanges(t *testing.T) {
 	count, err := c.ZADD("z1", fullSet, Flags{})
 	assert.NoError(t, err)
 	assert.Equal(t, int64(9), count)
-
-	fullScore, ok, err := c._zFullScoreByRank("z1", 0, true)
-	assert.NoError(t, err)
-	assert.True(t, ok)
-	assert.Equal(t, floatToLex(big.NewFloat(1)), fullScore)
-
-	fullScore, ok, err = c._zFullScoreByRank("z1", 0, false)
-	assert.NoError(t, err)
-	assert.True(t, ok)
-	assert.Equal(t, floatToLex(big.NewFloat(9)), fullScore)
-
-	fullScore, ok, err = c._zFullScoreByRank("z1", 5, true)
-	assert.NoError(t, err)
-	assert.True(t, ok)
-	assert.Equal(t, floatToLex(big.NewFloat(6)), fullScore)
-
-	fullScore, ok, err = c._zFullScoreByRank("z1", 5, false)
-	assert.NoError(t, err)
-	assert.True(t, ok)
-	assert.Equal(t, floatToLex(big.NewFloat(4)), fullScore)
-
-	fullScore, ok, err = c._zFullScoreByRank("z1", -1, true)
-	assert.NoError(t, err)
-	assert.True(t, ok)
-	assert.Equal(t, floatToLex(big.NewFloat(9)), fullScore)
-
-	fullScore, ok, err = c._zFullScoreByRank("z1", -5, true)
-	assert.NoError(t, err)
-	assert.True(t, ok)
-	assert.Equal(t, floatToLex(big.NewFloat(5)), fullScore)
-
-	fullScore, ok, err = c._zFullScoreByRank("z1", -5, false)
-	assert.NoError(t, err)
-	assert.True(t, ok)
-	assert.Equal(t, floatToLex(big.NewFloat(5)), fullScore)
-
-	fullScore, ok, err = c._zFullScoreByRank("z1", -1, true)
-	assert.NoError(t, err)
-	assert.True(t, ok)
-	assert.Equal(t, floatToLex(big.NewFloat(9)), fullScore)
 
 	set, err := c.ZRANGE("z1", 0, 3)
 	assert.NoError(t, err)
