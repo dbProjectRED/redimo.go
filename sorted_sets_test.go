@@ -2,6 +2,7 @@ package redimo
 
 import (
 	"math"
+	"math/big"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -138,4 +139,83 @@ func TestSortedSetPops(t *testing.T) {
 	count, err = c.ZCARD("z1")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(0), count)
+}
+
+func TestSortedSetRanges(t *testing.T) {
+	c := newClient(t)
+
+	fullSet := map[string]float64{
+		"m1": 1,
+		"m2": 2,
+		"m3": 3,
+		"m4": 4,
+		"m5": 5,
+		"m6": 6,
+		"m7": 7,
+		"m8": 8,
+		"m9": 9,
+	}
+	count, err := c.ZADD("z1", fullSet, Flags{})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(9), count)
+
+	fullScore, ok, err := c._zFullScoreByRank("z1", 0, true)
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, floatToLex(big.NewFloat(1)), fullScore)
+
+	fullScore, ok, err = c._zFullScoreByRank("z1", 0, false)
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, floatToLex(big.NewFloat(9)), fullScore)
+
+	fullScore, ok, err = c._zFullScoreByRank("z1", 5, true)
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, floatToLex(big.NewFloat(6)), fullScore)
+
+	fullScore, ok, err = c._zFullScoreByRank("z1", 5, false)
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, floatToLex(big.NewFloat(4)), fullScore)
+
+	fullScore, ok, err = c._zFullScoreByRank("z1", -1, true)
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, floatToLex(big.NewFloat(9)), fullScore)
+
+	fullScore, ok, err = c._zFullScoreByRank("z1", -5, true)
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, floatToLex(big.NewFloat(5)), fullScore)
+
+	fullScore, ok, err = c._zFullScoreByRank("z1", -5, false)
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, floatToLex(big.NewFloat(5)), fullScore)
+
+	fullScore, ok, err = c._zFullScoreByRank("z1", -1, true)
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, floatToLex(big.NewFloat(9)), fullScore)
+
+	set, err := c.ZRANGE("z1", 0, 3)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m1": 1, "m2": 2, "m3": 3, "m4": 4}, set)
+
+	set, err = c.ZRANGE("z1", 2, -4)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m3": 3, "m4": 4, "m5": 5, "m6": 6}, set)
+
+	set, err = c.ZRANGE("z1", -4, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m6": 6, "m7": 7, "m8": 8, "m9": 9}, set)
+
+	set, err = c.ZREVRANGE("z1", 0, 3)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m6": 6, "m7": 7, "m8": 8, "m9": 9}, set)
+
+	set, err = c.ZREVRANGE("z1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, fullSet, set)
 }
