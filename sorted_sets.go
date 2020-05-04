@@ -10,6 +10,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
+type Aggregation string
+
+const (
+	Sum Aggregation = "SUM"
+	Min Aggregation = "MIN"
+	Max Aggregation = "MAX"
+	Avg Aggregation = "AVG"
+)
+
 func (c Client) ZADD(key string, membersWithScores map[string]float64, flags Flags) (savedCount int64, err error) {
 	for member, score := range membersWithScores {
 		builder := newExpresionBuilder()
@@ -162,7 +171,7 @@ func (c Client) ZINCRBY(key string, member string, delta float64) (newScore floa
 	return newScore, fmt.Errorf("too much contention on %v / %v", key, member)
 }
 
-func (c Client) ZINTERSTORE(key string, keys []string, weights map[string]float64, flags Flags) (count int64, err error) {
+func (c Client) ZINTERSTORE(destinationKey string, sourceKeys []string, aggregation Aggregation, weights map[string]float64) (count int64, err error) {
 	return
 }
 
@@ -437,6 +446,6 @@ func (c Client) ZSCORE(key string, member string) (score float64, ok bool, err e
 	return
 }
 
-func (c Client) ZUNIONSTORE(key string, keys []string, weights map[string]float64, flags Flags) (count int64, err error) {
+func (c Client) ZUNIONSTORE(destinationKey string, sourceKeys []string, aggregation Aggregation, weights map[string]float64) (count int64, err error) {
 	return
 }
