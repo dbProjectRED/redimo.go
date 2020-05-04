@@ -3,6 +3,7 @@ package redimo
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/big"
 	"strings"
 
@@ -16,8 +17,25 @@ const (
 	Sum Aggregation = "SUM"
 	Min Aggregation = "MIN"
 	Max Aggregation = "MAX"
-	Avg Aggregation = "AVG"
 )
+
+var accumulators = map[Aggregation]func(float64, float64) float64{
+	Sum: func(a float64, b float64) float64 {
+		return a + b
+	},
+	Min: func(a float64, b float64) float64 {
+		if a < b {
+			return a
+		}
+		return b
+	},
+	Max: func(a float64, b float64) float64 {
+		if a > b {
+			return a
+		}
+		return b
+	},
+}
 
 func (c Client) ZADD(key string, membersWithScores map[string]float64, flags Flags) (savedCount int64, err error) {
 	for member, score := range membersWithScores {
@@ -447,5 +465,42 @@ func (c Client) ZSCORE(key string, member string) (score float64, ok bool, err e
 }
 
 func (c Client) ZUNIONSTORE(destinationKey string, sourceKeys []string, aggregation Aggregation, weights map[string]float64) (count int64, err error) {
+	set, err := c.ZUNION(sourceKeys, aggregation, weights)
+	if err == nil {
+		count, err = c.ZADD(destinationKey, set, Flags{})
+	}
+
+	return
+}
+
+func (c Client) ZUNION(sourceKeys []string, aggregation Aggregation, weights map[string]float64) (membersWithScores map[string]float64, err error) {
+	membersWithScores = make(map[string]float64)
+	getWeight := func(key string) float64 {
+		if weights == nil {
+			return 1
+		}
+
+		if w, ok := weights[key]; ok {
+			return w
+		}
+
+		return 1
+	}
+
+	for _, sourceKey := range sourceKeys {
+		currentSet, err := c.ZRANGEBYSCORE(sourceKey, math.Inf(-1), math.Inf(+1), 0, 0)
+		if err != nil {
+			return membersWithScores, err
+		}
+
+		for member, score := range currentSet {
+			if existingValue, ok := membersWithScores[member]; ok {
+				membersWithScores[member] = accumulators[aggregation](existingValue, score*getWeight(sourceKey))
+			} else {
+				membersWithScores[member] = score * getWeight(sourceKey)
+			}
+		}
+	}
+
 	return
 }

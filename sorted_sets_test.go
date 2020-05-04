@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestBasicSortedSets(t *testing.T) {
+func TestZBasic(t *testing.T) {
 	c := newClient(t)
 
 	count, err := c.ZADD("z1", map[string]float64{"m1": 1, "m2": 2, "m3": 3, "m4": math.Inf(+1)}, Flags{})
@@ -66,7 +66,7 @@ func TestBasicSortedSets(t *testing.T) {
 	assert.Equal(t, 0.5, score)
 }
 
-func TestSortedSetPops(t *testing.T) {
+func TestZPops(t *testing.T) {
 	c := newClient(t)
 
 	count, err := c.ZADD("z1", map[string]float64{
@@ -128,7 +128,7 @@ func TestSortedSetPops(t *testing.T) {
 	assert.Equal(t, int64(0), count)
 }
 
-func TestSortedSetRanges(t *testing.T) {
+func TestZRanges(t *testing.T) {
 	c := newClient(t)
 
 	fullSet := map[string]float64{
@@ -260,7 +260,7 @@ func assertAbsence(t *testing.T, c Client, members ...string) {
 	}
 }
 
-func TestCounts(t *testing.T) {
+func TestZCounts(t *testing.T) {
 	c := newClient(t)
 
 	count, err := c.ZADD("z1", map[string]float64{
@@ -302,4 +302,54 @@ func TestCounts(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), rank)
+}
+
+func TestZAggregations(t *testing.T) {
+	c := newClient(t)
+	_, err := c.ZADD("z1", map[string]float64{
+		"m1": 1,
+		"m2": 2,
+		"m3": 3,
+	}, Flags{})
+	assert.NoError(t, err)
+	_, err = c.ZADD("z2", map[string]float64{
+		"m3": 3.5,
+		"m4": 4,
+		"m5": 5,
+	}, Flags{})
+	assert.NoError(t, err)
+	_, err = c.ZADD("z3", map[string]float64{
+		"m5": 5.5,
+		"m6": 6,
+		"m7": 7,
+	}, Flags{})
+	assert.NoError(t, err)
+
+	set, err := c.ZUNION([]string{"z1", "z2", "z3"}, Sum, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m1": 1, "m2": 2, "m3": 6.5, "m4": 4, "m5": 10.5, "m6": 6, "m7": 7}, set)
+
+	set, err = c.ZUNION([]string{"z1", "z2", "z3"}, Sum, map[string]float64{"z3": 2})
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m1": 1, "m2": 2, "m3": 6.5, "m4": 4, "m5": 16, "m6": 12, "m7": 14}, set)
+
+	set, err = c.ZUNION([]string{"z1", "z2", "z3"}, Min, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m1": 1, "m2": 2, "m3": 3, "m4": 4, "m5": 5, "m6": 6, "m7": 7}, set)
+
+	set, err = c.ZUNION([]string{"z1", "z2", "z3"}, Max, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m1": 1, "m2": 2, "m3": 3.5, "m4": 4, "m5": 5.5, "m6": 6, "m7": 7}, set)
+
+	set, err = c.ZUNION([]string{"z1", "z2", "z3"}, Max, map[string]float64{"z2": 2})
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m1": 1, "m2": 2, "m3": 7, "m4": 8, "m5": 10, "m6": 6, "m7": 7}, set)
+
+	count, err := c.ZUNIONSTORE("union1", []string{"z1", "z2", "z3"}, Max, map[string]float64{"z2": 2})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(7), count)
+
+	set, err = c.ZRANGEBYSCORE("union1", math.Inf(-1), math.Inf(+1), 0, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m1": 1, "m2": 2, "m3": 7, "m4": 8, "m5": 10, "m6": 6, "m7": 7}, set)
 }
