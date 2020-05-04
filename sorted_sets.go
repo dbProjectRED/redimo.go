@@ -151,48 +151,22 @@ func (c Client) ZPOPMIN(key string, count int64) (membersWithScores map[string]f
 	return c._zpop(key, count, true)
 }
 
-func (c Client) _zpop(key string, count int64, ascending bool) (membersWithScores map[string]float64, err error) {
-	membersWithScores = make(map[string]float64)
-	hasMoreResults := true
+func (c Client) _zpop(key string, count int64, forward bool) (membersWithScores map[string]float64, err error) {
+	membersWithScores, err = c._zGeneralRange(key, "", "", 0, count, forward, sk2)
+	if err != nil {
+		return
+	}
 
-	var lastEvaluatedKey map[string]dynamodb.AttributeValue
+	members := make([]string, 0, len(membersWithScores))
 
-	builder := newExpresionBuilder()
-	builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
-	builder.values[pk] = StringValue{key}.toAV()
+	for member := range membersWithScores {
+		members = append(members, member)
+	}
 
-	for hasMoreResults && count > 0 {
-		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
-			ConsistentRead:            aws.Bool(c.consistentReads),
-			ExclusiveStartKey:         lastEvaluatedKey,
-			ExpressionAttributeNames:  builder.expressionAttributeNames(),
-			ExpressionAttributeValues: builder.expressionAttributeValues(),
-			IndexName:                 aws.String("lsi_sk2"),
-			KeyConditionExpression:    builder.conditionExpression(),
-			Limit:                     aws.Int64(count),
-			ScanIndexForward:          aws.Bool(ascending),
-			TableName:                 aws.String(c.table),
-		}).Send(context.TODO())
-		if err != nil {
-			return membersWithScores, err
-		}
+	_, err = c.ZREM(key, members...)
 
-		for _, item := range resp.Items {
-			parsedItem := parseItem(item)
-			membersWithScores[parsedItem.sk], _ = lexToFloat(parsedItem.sk2).Float64()
-			_, err = c.ZREM(key, parsedItem.sk)
-
-			if err != nil {
-				return membersWithScores, err
-			}
-			count--
-		}
-
-		if len(resp.LastEvaluatedKey) > 0 {
-			lastEvaluatedKey = resp.LastEvaluatedKey
-		} else {
-			hasMoreResults = false
-		}
+	if err != nil {
+		return
 	}
 
 	return
