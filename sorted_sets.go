@@ -52,15 +52,39 @@ func (c Client) ZCARD(key string) (count int64, err error) {
 }
 
 func (c Client) ZCOUNT(key string, minScore, maxScore float64) (count int64, err error) {
+	return c._zGeneralCount(key, floatToLex(big.NewFloat(minScore)), floatToLex(big.NewFloat(maxScore)), sk2)
+}
+
+func (c Client) _zGeneralCount(key string, min string, max string, attribute string) (count int64, err error) {
 	builder := newExpresionBuilder()
 	builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
 	builder.values[pk] = StringValue{key}.toAV()
-	builder.condition(fmt.Sprintf("#%v BETWEEN :min AND :max", sk2), sk2)
-	builder.values["min"] = StringValue{floatToLex(big.NewFloat(minScore))}.toAV()
-	builder.values["max"] = StringValue{floatToLex(big.NewFloat(maxScore))}.toAV()
+	betweenRange := min != "" && max != ""
+	if betweenRange {
+		builder.condition(fmt.Sprintf("#%v BETWEEN :min AND :max", attribute), attribute)
+	}
+
+	if min != "" {
+		builder.values["min"] = StringValue{min}.toAV()
+		if !betweenRange {
+			builder.condition(fmt.Sprintf("#%v >= :min", attribute), attribute)
+		}
+	}
+	if max != "" {
+		builder.values["max"] = StringValue{max}.toAV()
+		if !betweenRange {
+			builder.condition(fmt.Sprintf("#%v <= :max", attribute), attribute)
+		}
+	}
+
 	hasMoreResults := true
 
 	var lastEvaluatedKey map[string]dynamodb.AttributeValue
+
+	var indexName *string
+	if attribute == sk2 {
+		indexName = aws.String("lsi_sk2")
+	}
 
 	for hasMoreResults {
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
@@ -68,9 +92,8 @@ func (c Client) ZCOUNT(key string, minScore, maxScore float64) (count int64, err
 			ExclusiveStartKey:         lastEvaluatedKey,
 			ExpressionAttributeNames:  builder.expressionAttributeNames(),
 			ExpressionAttributeValues: builder.expressionAttributeValues(),
-			IndexName:                 aws.String("lsi_sk2"),
+			IndexName:                 indexName,
 			KeyConditionExpression:    builder.conditionExpression(),
-			ScanIndexForward:          aws.Bool(true),
 			Select:                    dynamodb.SelectCount,
 			TableName:                 aws.String(c.table),
 		}).Send(context.TODO())
@@ -140,7 +163,7 @@ func (c Client) ZINTERSTORE(key string, keys []string, weights map[string]float6
 }
 
 func (c Client) ZLEXCOUNT(key string, min string, max string) (count int64, err error) {
-	return
+	return c._zGeneralCount(key, min, max, sk)
 }
 
 func (c Client) ZPOPMAX(key string, count int64) (membersWithScores map[string]float64, err error) {
@@ -288,6 +311,25 @@ func (c Client) _zGeneralRange(key string,
 }
 
 func (c Client) ZRANK(key string, member string) (rank int64, ok bool, err error) {
+	return c._zrank(key, member, true)
+}
+
+func (c Client) _zrank(key string, member string, forward bool) (rank int64, ok bool, err error) {
+	score, ok, err := c.ZSCORE(key, member)
+	if err != nil || !ok {
+		return
+	}
+	var count int64
+	if forward {
+		count, err = c._zGeneralCount(key, "", floatToLex(big.NewFloat(score)), sk2)
+	} else {
+		count, err = c._zGeneralCount(key, floatToLex(big.NewFloat(score)), "", sk2)
+	}
+
+	if err == nil {
+		rank = count - 1
+	}
+
 	return
 }
 
@@ -344,7 +386,7 @@ func (c Client) ZREVRANGEBYSCORE(key string, max, min float64, offset, count int
 }
 
 func (c Client) ZREVRANK(key string, member string) (rank int64, ok bool, err error) {
-	return
+	return c._zrank(key, member, false)
 }
 
 func (c Client) ZSCORE(key string, member string) (score float64, ok bool, err error) {

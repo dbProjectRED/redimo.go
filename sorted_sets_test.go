@@ -27,18 +27,6 @@ func TestBasicSortedSets(t *testing.T) {
 	assert.NoError(t, err)
 	assert.False(t, ok)
 
-	count, err = c.ZCOUNT("z1", 2, 3)
-	assert.NoError(t, err)
-	assert.Equal(t, int64(2), count)
-
-	count, err = c.ZCOUNT("z1", 2, math.Inf(+1))
-	assert.NoError(t, err)
-	assert.Equal(t, int64(3), count)
-
-	count, err = c.ZCOUNT("z1", math.Inf(-1), math.Inf(+1))
-	assert.NoError(t, err)
-	assert.Equal(t, int64(4), count)
-
 	newScore, err := c.ZINCRBY("z1", "m2", 0.5)
 	assert.NoError(t, err)
 	assert.InDelta(t, 2.5, newScore, 0.001)
@@ -225,4 +213,49 @@ func TestSortedSetRanges(t *testing.T) {
 	set, err = c.ZREVRANGEBYLEX("z1", "m3", "", 1, 1)
 	assert.NoError(t, err)
 	assert.Equal(t, map[string]float64{"m2": 2}, set)
+}
+
+func TestCounts(t *testing.T) {
+	c := newClient(t)
+
+	count, err := c.ZADD("z1", map[string]float64{
+		"m1": 1,
+		"m2": 2,
+		"m3": 3,
+		"m4": 4,
+	}, Flags{})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(4), count)
+
+	count, err = c.ZCOUNT("z1", 2, 3)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), count)
+
+	count, err = c.ZCOUNT("z1", 2, math.Inf(+1))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), count)
+
+	count, err = c.ZCOUNT("z1", math.Inf(-1), math.Inf(+1))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(4), count)
+
+	count, err = c.ZLEXCOUNT("z1", "m2", "m4")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), count)
+
+	rank, ok, err := c.ZRANK("z1", "m2")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), rank)
+
+	rank, ok, err = c.ZRANK("z1", "m4")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, int64(3), rank)
+
+	rank, ok, err = c.ZREVRANK("z1", "m4")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), rank)
+
 }
