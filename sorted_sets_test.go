@@ -352,4 +352,32 @@ func TestZAggregations(t *testing.T) {
 	set, err = c.ZRANGEBYSCORE("union1", math.Inf(-1), math.Inf(+1), 0, 0)
 	assert.NoError(t, err)
 	assert.Equal(t, map[string]float64{"m1": 1, "m2": 2, "m3": 7, "m4": 8, "m5": 10, "m6": 6, "m7": 7}, set)
+
+	set, err = c.ZINTER([]string{"z1", "z3"}, Sum, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{}, set)
+
+	set, err = c.ZINTER([]string{"z1", "z2"}, Sum, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m3": 6.5}, set)
+
+	set, err = c.ZINTER([]string{"z1", "z2"}, Sum, map[string]float64{"z2": 2})
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m3": 10}, set)
+
+	set, err = c.ZINTER([]string{"z1", "z2"}, Min, map[string]float64{"z2": 2})
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m3": 3}, set)
+
+	set, err = c.ZINTER([]string{"z1", "z2"}, Max, map[string]float64{"z2": 2})
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m3": 7}, set)
+
+	count, err = c.ZINTERSTORE("inter1", []string{"z1", "z2"}, Max, map[string]float64{"z2": 2})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+
+	set, err = c.ZRANGEBYSCORE("inter1", math.Inf(-1), math.Inf(+1), 0, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]float64{"m3": 7}, set)
 }

@@ -190,6 +190,11 @@ func (c Client) ZINCRBY(key string, member string, delta float64) (newScore floa
 }
 
 func (c Client) ZINTERSTORE(destinationKey string, sourceKeys []string, aggregation Aggregation, weights map[string]float64) (count int64, err error) {
+	set, err := c.ZINTER(sourceKeys, aggregation, weights)
+	if err == nil {
+		count, err = c.ZADD(destinationKey, set, Flags{})
+	}
+
 	return
 }
 
@@ -473,19 +478,19 @@ func (c Client) ZUNIONSTORE(destinationKey string, sourceKeys []string, aggregat
 	return
 }
 
-func (c Client) ZUNION(sourceKeys []string, aggregation Aggregation, weights map[string]float64) (membersWithScores map[string]float64, err error) {
-	membersWithScores = make(map[string]float64)
-	getWeight := func(key string) float64 {
-		if weights == nil {
-			return 1
-		}
-
-		if w, ok := weights[key]; ok {
-			return w
-		}
-
+func getWeight(weights map[string]float64, key string) float64 {
+	if weights == nil {
 		return 1
 	}
+
+	if w, ok := weights[key]; ok {
+		return w
+	}
+
+	return 1
+}
+func (c Client) ZUNION(sourceKeys []string, aggregation Aggregation, weights map[string]float64) (membersWithScores map[string]float64, err error) {
+	membersWithScores = make(map[string]float64)
 
 	for _, sourceKey := range sourceKeys {
 		currentSet, err := c.ZRANGEBYSCORE(sourceKey, math.Inf(-1), math.Inf(+1), 0, 0)
@@ -495,9 +500,35 @@ func (c Client) ZUNION(sourceKeys []string, aggregation Aggregation, weights map
 
 		for member, score := range currentSet {
 			if existingValue, ok := membersWithScores[member]; ok {
-				membersWithScores[member] = accumulators[aggregation](existingValue, score*getWeight(sourceKey))
+				membersWithScores[member] = accumulators[aggregation](existingValue, score*getWeight(weights, sourceKey))
 			} else {
-				membersWithScores[member] = score * getWeight(sourceKey)
+				membersWithScores[member] = score * getWeight(weights, sourceKey)
+			}
+		}
+	}
+
+	return
+}
+
+func (c Client) ZINTER(sourceKeys []string, aggregation Aggregation, weights map[string]float64) (membersWithScores map[string]float64, err error) {
+	membersWithScores, err = c.ZRANGEBYSCORE(sourceKeys[0], math.Inf(-1), math.Inf(+1), 0, 0)
+	if err != nil {
+		return
+	}
+
+	for i := 1; i < len(sourceKeys); i++ {
+		sourceKey := sourceKeys[i]
+		currentSet, err := c.ZRANGEBYSCORE(sourceKey, math.Inf(-1), math.Inf(+1), 0, 0)
+
+		if err != nil {
+			return membersWithScores, err
+		}
+
+		for member, score := range membersWithScores {
+			if currentSetValue, ok := currentSet[member]; ok {
+				membersWithScores[member] = accumulators[aggregation](score, currentSetValue*getWeight(weights, sourceKey))
+			} else {
+				delete(membersWithScores, member)
 			}
 		}
 	}
