@@ -257,5 +257,4 @@ func TestCounts(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), rank)
-
 }

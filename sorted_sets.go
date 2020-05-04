@@ -60,18 +60,22 @@ func (c Client) _zGeneralCount(key string, min string, max string, attribute str
 	builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
 	builder.values[pk] = StringValue{key}.toAV()
 	betweenRange := min != "" && max != ""
+
 	if betweenRange {
 		builder.condition(fmt.Sprintf("#%v BETWEEN :min AND :max", attribute), attribute)
 	}
 
 	if min != "" {
 		builder.values["min"] = StringValue{min}.toAV()
+
 		if !betweenRange {
 			builder.condition(fmt.Sprintf("#%v >= :min", attribute), attribute)
 		}
 	}
+
 	if max != "" {
 		builder.values["max"] = StringValue{max}.toAV()
+
 		if !betweenRange {
 			builder.condition(fmt.Sprintf("#%v <= :max", attribute), attribute)
 		}
@@ -319,7 +323,9 @@ func (c Client) _zrank(key string, member string, forward bool) (rank int64, ok 
 	if err != nil || !ok {
 		return
 	}
+
 	var count int64
+
 	if forward {
 		count, err = c._zGeneralCount(key, "", floatToLex(big.NewFloat(score)), sk2)
 	} else {
