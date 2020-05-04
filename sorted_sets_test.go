@@ -213,6 +213,51 @@ func TestSortedSetRanges(t *testing.T) {
 	set, err = c.ZREVRANGEBYLEX("z1", "m3", "", 1, 1)
 	assert.NoError(t, err)
 	assert.Equal(t, map[string]float64{"m2": 2}, set)
+
+	count, err = c.ZREMRANGEBYLEX("z1", "m1", "m3")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), count)
+
+	// remove m1, m2, m3
+	set, err = c.ZRANGEBYLEX("z1", "m1", "m3", 0, 0)
+	assert.NoError(t, err)
+	assert.Empty(t, set)
+
+	count, err = c.ZCARD("z1")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(6), count)
+
+	assertAbsence(t, c, "m1", "m2", "m3")
+
+	// remove m4, m5, m6
+	count, err = c.ZREMRANGEBYRANK("z1", 0, 2)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), count)
+
+	assertAbsence(t, c, "m4", "m5", "m6")
+
+	count, err = c.ZCARD("z1")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), count)
+
+	// remove m7, m8, m9
+	count, err = c.ZREMRANGEBYSCORE("z1", 7, 9)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), count)
+
+	assertAbsence(t, c, "m7", "m8", "m9")
+
+	count, err = c.ZCARD("z1")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(0), count)
+}
+
+func assertAbsence(t *testing.T, c Client, members ...string) {
+	for _, member := range members {
+		_, ok, err := c.ZSCORE("z1", member)
+		assert.NoError(t, err)
+		assert.False(t, ok)
+	}
 }
 
 func TestCounts(t *testing.T) {

@@ -368,15 +368,39 @@ func (c Client) ZREM(key string, members ...string) (count int64, err error) {
 }
 
 func (c Client) ZREMRANGEBYLEX(key string, min, max string) (count int64, err error) {
-	return
+	membersWithScores, err := c.ZRANGEBYLEX(key, min, max, 0, 0)
+	if err == nil {
+		_, err = c.ZREM(key, membersKeys(membersWithScores)...)
+	}
+
+	return int64(len(membersWithScores)), err
+}
+
+func membersKeys(membersWithScores map[string]float64) []string {
+	members := make([]string, 0, len(membersWithScores))
+	for member := range membersWithScores {
+		members = append(members, member)
+	}
+
+	return members
 }
 
 func (c Client) ZREMRANGEBYRANK(key string, start, stop int64) (count int64, err error) {
-	return
+	membersWithScores, err := c.ZRANGE(key, start, stop)
+	if err == nil {
+		_, err = c.ZREM(key, membersKeys(membersWithScores)...)
+	}
+
+	return int64(len(membersWithScores)), err
 }
 
 func (c Client) ZREMRANGEBYSCORE(key string, min, max float64) (count int64, err error) {
-	return
+	membersWithScores, err := c.ZRANGEBYSCORE(key, min, max, 0, 0)
+	if err == nil {
+		_, err = c.ZREM(key, membersKeys(membersWithScores)...)
+	}
+
+	return int64(len(membersWithScores)), err
 }
 
 func (c Client) ZREVRANGE(key string, start, stop int64) (membersWithScores map[string]float64, err error) {
