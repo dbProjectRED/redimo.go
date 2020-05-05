@@ -1,6 +1,7 @@
 package redimo
 
 import (
+	"fmt"
 	"math"
 	"math/big"
 	"strconv"
@@ -15,13 +16,36 @@ type Client struct {
 	ddbClient       *dynamodb.Client
 	consistentReads bool
 	table           string
+	indexes         map[string]string
 }
 
-const pk = "pk"
-const sk = "sk"
-const sk2 = "sk2"
-const vk = "val"
-const defaultSK = "/"
+func (c Client) getIndex(attribute string) *string {
+	if c.indexes == nil {
+		return nil
+	}
+
+	index, found := c.indexes[attribute]
+	if !found {
+		return nil
+	}
+
+	return aws.String(index)
+}
+
+const (
+	pk        = "pk"
+	sk        = "sk"
+	sk2       = "sk2"
+	sk3       = "sk3"
+	sk4       = "sk4"
+	vk        = "val"
+	emptySK   = "/"
+	skLeft    = sk2
+	skRight   = sk3
+	skScore   = sk2
+	skElement = sk
+	skHash    = sk4
+)
 
 type expressionBuilder struct {
 	conditions []string
@@ -93,6 +117,20 @@ func (b *expressionBuilder) updateExpression() *string {
 	return aws.String(strings.Join(clauses, " "))
 }
 
+func (b *expressionBuilder) conditionEquality(attributeName string, value Value) {
+	valueName := "cval" + strconv.Itoa(len(b.conditions))
+	b.condition(fmt.Sprintf("#%v = :%v", attributeName, valueName), attributeName)
+	b.values[valueName] = value.toAV()
+}
+
+func (b *expressionBuilder) updateSET(attributeName string, value Value) {
+	b.SET(fmt.Sprintf("#%v = :%v", attributeName, attributeName), attributeName, value.toAV())
+}
+
+func (b *expressionBuilder) conditionNonExistence(attributeName string) {
+	b.condition(fmt.Sprintf("attribute_not_exists(#%v)", attributeName), attributeName)
+}
+
 func newExpresionBuilder() expressionBuilder {
 	return expressionBuilder{
 		conditions: []string{},
@@ -106,6 +144,8 @@ type keyDef struct {
 	pk  string
 	sk  string
 	sk2 string
+	sk3 string
+	sk4 string
 }
 
 func (k keyDef) toAV() map[string]dynamodb.AttributeValue {
@@ -120,6 +160,18 @@ func (k keyDef) toAV() map[string]dynamodb.AttributeValue {
 	if k.sk2 != "" {
 		m[sk2] = dynamodb.AttributeValue{
 			S: aws.String(k.sk2),
+		}
+	}
+
+	if k.sk3 != "" {
+		m[sk3] = dynamodb.AttributeValue{
+			S: aws.String(k.sk3),
+		}
+	}
+
+	if k.sk4 != "" {
+		m[sk4] = dynamodb.AttributeValue{
+			S: aws.String(k.sk4),
 		}
 	}
 
@@ -143,6 +195,8 @@ func parseKey(avm map[string]dynamodb.AttributeValue) keyDef {
 		pk:  aws.StringValue(avm[pk].S),
 		sk:  aws.StringValue(avm[sk].S),
 		sk2: aws.StringValue(avm[sk2].S),
+		sk3: aws.StringValue(avm[sk3].S),
+		sk4: aws.StringValue(avm[sk4].S),
 	}
 }
 

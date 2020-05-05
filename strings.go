@@ -12,7 +12,7 @@ import (
 func (c Client) GET(key string) (val Value, err error) {
 	resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
 		ConsistentRead: aws.Bool(c.consistentReads),
-		Key:            keyDef{pk: key, sk: defaultSK}.toAV(),
+		Key:            keyDef{pk: key, sk: emptySK}.toAV(),
 		TableName:      aws.String(c.table),
 	}).Send(context.TODO())
 	if err != nil || len(resp.Item) == 0 {
@@ -44,7 +44,7 @@ func (c Client) SET(key string, value Value, flags Flags) (ok bool, err error) {
 		UpdateExpression:          builder.updateExpression(),
 		Key: keyDef{
 			pk: key,
-			sk: defaultSK,
+			sk: emptySK,
 		}.toAV(),
 		TableName: aws.String(c.table),
 	}).Send(context.TODO())
@@ -74,7 +74,7 @@ func (c Client) GETSET(key string, value Value) (oldValue Value, err error) {
 		UpdateExpression:          builder.updateExpression(),
 		Key: keyDef{
 			pk: key,
-			sk: defaultSK,
+			sk: emptySK,
 		}.toAV(),
 		ReturnValues: dynamodb.ReturnValueAllOld,
 		TableName:    aws.String(c.table),
@@ -98,7 +98,7 @@ func (c Client) MGET(keys ...string) (outputs []Value, err error) {
 			Get: &dynamodb.Get{
 				Key: keyDef{
 					pk: key,
-					sk: defaultSK,
+					sk: emptySK,
 				}.toAV(),
 				ProjectionExpression: aws.String(vk),
 				TableName:            aws.String(c.table),
@@ -153,7 +153,7 @@ func (c Client) _mset(data map[string]Value, flags Flags) (ok bool, err error) {
 				ExpressionAttributeValues: builder.expressionAttributeValues(),
 				Key: keyDef{
 					pk: k,
-					sk: defaultSK,
+					sk: emptySK,
 				}.toAV(),
 				TableName:        aws.String(c.table),
 				UpdateExpression: builder.updateExpression(),
@@ -185,7 +185,7 @@ func (c Client) INCRBYFLOAT(key string, delta *big.Float) (after *big.Float, err
 		ExpressionAttributeValues: map[string]dynamodb.AttributeValue{
 			":delta": NumericValue{delta}.toAV(),
 		},
-		Key:              keyDef{pk: key, sk: defaultSK}.toAV(),
+		Key:              keyDef{pk: key, sk: emptySK}.toAV(),
 		ReturnValues:     dynamodb.ReturnValueAllNew,
 		TableName:        aws.String(c.table),
 		UpdateExpression: aws.String("ADD #val :delta"),
