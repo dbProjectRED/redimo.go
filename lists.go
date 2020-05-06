@@ -47,6 +47,36 @@ func (ln listNode) keyAV() map[string]dynamodb.AttributeValue {
 	return avm
 }
 
+func (ln listNode) nextAddressFrom(side Side) (address string) {
+	switch side {
+	case Left:
+		address = ln.right
+	case Right:
+		address = ln.left
+	}
+	return
+}
+
+func (ln listNode) nextAttributeNameFrom(side Side) (attribute string) {
+	switch side {
+	case Left:
+		attribute = skRight
+	case Right:
+		attribute = skLeft
+	}
+	return
+}
+
+func (ln listNode) prevAttributeNameFrom(side Side) (attribute string) {
+	switch side {
+	case Left:
+		attribute = skLeft
+	case Right:
+		attribute = skRight
+	}
+	return
+}
+
 func parseListNode(avm map[string]dynamodb.AttributeValue) (ln listNode) {
 	ln.key = aws.StringValue(avm[pk].S)
 	ln.address = aws.StringValue(avm[sk].S)
@@ -70,6 +100,67 @@ func (c Client) LLEN(key string) (length int64, err error) {
 }
 
 func (c Client) LPOP(key string) (element string, ok bool, err error) {
+	return c.listPop(key, Left)
+}
+
+func (c Client) listPop(key string, side Side) (element string, ok bool, err error) {
+	endNode, ok, err := c.listEnd(key, side)
+	if err != nil || !ok {
+		return
+	}
+	popNode, ok, err := c.listGet(key, endNode.nextAddressFrom(side))
+	if err != nil || !ok {
+		return
+	}
+	penultimateNodeAddress := popNode.nextAddressFrom(side)
+	if penultimateNodeAddress == HEAD || penultimateNodeAddress == TAIL {
+		// TODO
+	} else {
+		var transactItems []dynamodb.TransactWriteItem
+		transactItems = append(transactItems, dynamodb.TransactWriteItem{
+			Delete: &dynamodb.Delete{
+				Key:       popNode.keyAV(),
+				TableName: aws.String(c.table),
+			},
+		})
+
+		endNodeUpdater := newExpresionBuilder()
+		endNodeUpdater.conditionEquality(endNode.nextAttributeNameFrom(side), StringValue{endNode.nextAddressFrom(side)})
+		endNodeUpdater.updateSET(endNode.nextAttributeNameFrom(side), StringValue{penultimateNodeAddress})
+		transactItems = append(transactItems, dynamodb.TransactWriteItem{
+			Update: &dynamodb.Update{
+				ConditionExpression:       endNodeUpdater.conditionExpression(),
+				ExpressionAttributeNames:  endNodeUpdater.expressionAttributeNames(),
+				ExpressionAttributeValues: endNodeUpdater.expressionAttributeValues(),
+				Key:                       endNode.keyAV(),
+				TableName:                 aws.String(c.table),
+				UpdateExpression:          endNodeUpdater.updateExpression(),
+			},
+		})
+
+		penultimateKeyNode := listNode{key: key, address: penultimateNodeAddress}
+		penultimateNodeUpdater := newExpresionBuilder()
+		penultimateNodeUpdater.conditionEquality(penultimateKeyNode.prevAttributeNameFrom(side), StringValue{popNode.address})
+		penultimateNodeUpdater.updateSET(penultimateKeyNode.prevAttributeNameFrom(side), StringValue{endNode.address})
+		transactItems = append(transactItems, dynamodb.TransactWriteItem{
+			Update: &dynamodb.Update{
+				ConditionExpression:       penultimateNodeUpdater.conditionExpression(),
+				ExpressionAttributeNames:  penultimateNodeUpdater.expressionAttributeNames(),
+				ExpressionAttributeValues: penultimateNodeUpdater.expressionAttributeValues(),
+				Key:                       penultimateKeyNode.keyAV(),
+				TableName:                 aws.String(c.table),
+				UpdateExpression:          penultimateNodeUpdater.updateExpression(),
+			},
+		})
+
+		_, err := c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
+			TransactItems: transactItems,
+		}).Send(context.TODO())
+		if err != nil {
+			return element, ok, err
+		}
+		return popNode.value, true, nil
+	}
 	return
 }
 
@@ -237,11 +328,16 @@ func (c Client) listEnd(key string, side Side) (node listNode, found bool, err e
 		Left:  HEAD,
 		Right: TAIL,
 	}
+
+	return c.listGet(key, sideAddressMap[side])
+}
+
+func (c Client) listGet(key string, address string) (node listNode, found bool, err error) {
 	resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
 		ConsistentRead: aws.Bool(c.consistentReads),
 		Key: listNode{
 			key:     key,
-			address: sideAddressMap[side],
+			address: address,
 		}.keyAV(),
 		TableName: aws.String(c.table),
 	}).Send(context.TODO())
@@ -254,7 +350,6 @@ func (c Client) listEnd(key string, side Side) (node listNode, found bool, err e
 		found = true
 		node = parseListNode(resp.Item)
 	}
-
 	return
 }
 
@@ -312,7 +407,7 @@ func (c Client) LRANGE(key string, start, stop int64) (elements []string, err er
 	return
 }
 
-func (c Client) LREM(key string, count int64, element string) (removedCount int64, err error) {
+func (c Client) LREM(key string, count int64, elemenat string) (removedCount int64, err error) {
 	return
 }
 
@@ -325,7 +420,7 @@ func (c Client) LTRIM(key string, start, stop int64) (ok bool, err error) {
 }
 
 func (c Client) RPOP(key string) (element string, ok bool, err error) {
-	return
+	return c.listPop(key, Right)
 }
 
 func (c Client) RPOPLPUSH(sourceKey string, destinationKey string) (element string, ok bool, err error) {

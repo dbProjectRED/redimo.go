@@ -29,4 +29,22 @@ func TestLBasics(t *testing.T) {
 	elements, err = c.LRANGE("l1", 0, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"twinkle", "twinkle", "little", "star"}, elements)
+
+	element, found, err := c.LPOP("l1")
+	assert.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "twinkle", element)
+
+	elements, err = c.LRANGE("l1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"twinkle", "little", "star"}, elements)
+
+	element, found, err = c.RPOP("l1")
+	assert.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "star", element)
+
+	elements, err = c.LRANGE("l1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"twinkle", "little"}, elements)
 }
