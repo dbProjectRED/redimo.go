@@ -3,6 +3,7 @@ package redimo
 import (
 	"context"
 	"crypto/rand"
+	"log"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -77,6 +78,24 @@ func (ln listNode) prevAttributeNameFrom(side Side) (attribute string) {
 	return
 }
 
+func (ln *listNode) setNextFrom(side Side, address string) {
+	switch side {
+	case Left:
+		ln.right = address
+	case Right:
+		ln.left = address
+	}
+}
+
+func (ln *listNode) setPrevFrom(side Side, address string) {
+	switch side {
+	case Left:
+		ln.left = address
+	case Right:
+		ln.right = address
+	}
+}
+
 func parseListNode(avm map[string]dynamodb.AttributeValue) (ln listNode) {
 	ln.key = aws.StringValue(avm[pk].S)
 	ln.address = aws.StringValue(avm[sk].S)
@@ -108,40 +127,16 @@ func (c Client) listPop(key string, side Side) (element string, ok bool, err err
 	if err != nil || !ok {
 		return
 	}
-	popNode, ok, err := c.listGet(key, endNode.nextAddressFrom(side))
-	if err != nil || !ok {
-		return
-	}
-	penultimateNodeAddress := popNode.nextAddressFrom(side)
-	if penultimateNodeAddress == HEAD || penultimateNodeAddress == TAIL {
-		// TODO
-	} else {
-		var transactItems []dynamodb.TransactWriteItem
-		transactItems = append(transactItems, dynamodb.TransactWriteItem{
-			Delete: &dynamodb.Delete{
-				Key:       popNode.keyAV(),
-				TableName: aws.String(c.table),
-			},
-		})
 
-		endNodeUpdater := newExpresionBuilder()
-		endNodeUpdater.conditionEquality(endNode.nextAttributeNameFrom(side), StringValue{endNode.nextAddressFrom(side)})
-		endNodeUpdater.updateSET(endNode.nextAttributeNameFrom(side), StringValue{penultimateNodeAddress})
-		transactItems = append(transactItems, dynamodb.TransactWriteItem{
-			Update: &dynamodb.Update{
-				ConditionExpression:       endNodeUpdater.conditionExpression(),
-				ExpressionAttributeNames:  endNodeUpdater.expressionAttributeNames(),
-				ExpressionAttributeValues: endNodeUpdater.expressionAttributeValues(),
-				Key:                       endNode.keyAV(),
-				TableName:                 aws.String(c.table),
-				UpdateExpression:          endNodeUpdater.updateExpression(),
-			},
-		})
+	var transactItems []dynamodb.TransactWriteItem
 
+	penultimateNodeAddress := endNode.nextAddressFrom(side)
+	if penultimateNodeAddress != NULL {
 		penultimateKeyNode := listNode{key: key, address: penultimateNodeAddress}
 		penultimateNodeUpdater := newExpresionBuilder()
-		penultimateNodeUpdater.conditionEquality(penultimateKeyNode.prevAttributeNameFrom(side), StringValue{popNode.address})
-		penultimateNodeUpdater.updateSET(penultimateKeyNode.prevAttributeNameFrom(side), StringValue{endNode.address})
+		penultimateNodeUpdater.conditionEquality(penultimateKeyNode.prevAttributeNameFrom(side), StringValue{endNode.address})
+		penultimateNodeUpdater.updateSET(penultimateKeyNode.prevAttributeNameFrom(side), StringValue{NULL})
+		log.Println("k2y", penultimateKeyNode.key, "add:", penultimateKeyNode.address)
 		transactItems = append(transactItems, dynamodb.TransactWriteItem{
 			Update: &dynamodb.Update{
 				ConditionExpression:       penultimateNodeUpdater.conditionExpression(),
@@ -152,16 +147,22 @@ func (c Client) listPop(key string, side Side) (element string, ok bool, err err
 				UpdateExpression:          penultimateNodeUpdater.updateExpression(),
 			},
 		})
-
-		_, err := c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
-			TransactItems: transactItems,
-		}).Send(context.TODO())
-		if err != nil {
-			return element, ok, err
-		}
-		return popNode.value, true, nil
 	}
-	return
+	transactItems = append(transactItems, dynamodb.TransactWriteItem{
+		Delete: &dynamodb.Delete{
+			Key:       endNode.keyAV(),
+			TableName: aws.String(c.table),
+		},
+	})
+
+	_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
+		TransactItems: transactItems,
+	}).Send(context.TODO())
+	if err != nil {
+		return element, ok, err
+	}
+	return endNode.value, true, nil
+
 }
 
 func (c Client) LPUSH(key string, elements ...string) (newLength int64, err error) {
@@ -176,141 +177,52 @@ func (c Client) LPUSH(key string, elements ...string) (newLength int64, err erro
 	return
 }
 
-// When a node is added to either end, three actions must always be performed.
-// 1. The end-cap must be created or updated
-// 2. The node must be inserted with the one side pointing at the end cap
-// 3. The side of the node needs to be updated to point at the node.
-// 3.a. If this is a new list, the other-end cap needs to be created
 func (c Client) listPush(key string, element string, side Side) error {
 	var transactionItems []dynamodb.TransactWriteItem
 	node := listNode{
-		key:     key,
-		address: ulid.MustNew(ulid.Now(), rand.Reader).String(),
-		value:   element,
-	}
+		key:   key,
+		value: element,
+	} // need to set address, left and right.
 
-	switch side {
-	case Left:
-		node.left = HEAD
-	case Right:
-		node.right = TAIL
-	}
-
-	endNode, existingList, err := c.listEnd(key, side)
-
+	currentEndNode, existingList, err := c.listEnd(key, side)
 	if err != nil {
 		return err
 	}
+
 	if existingList {
-		var endNodeConcurrencyCheck string
-		var sideToUpdateOnEndNode string
-		var sideToUpdateOnExistingNode string
-		var existingNodeAddress string
-		switch side {
-		case Left:
-			sideToUpdateOnEndNode = skRight
-			endNodeConcurrencyCheck = endNode.right
-			node.right = endNode.right
+		node.address = ulid.MustNew(ulid.Now(), rand.Reader).String()
+		node.setNextFrom(side, currentEndNode.address)
+		node.setPrevFrom(side, NULL)
 
-			sideToUpdateOnExistingNode = skLeft
-			existingNodeAddress = endNode.right
-
-		case Right:
-			sideToUpdateOnEndNode = skLeft
-			endNodeConcurrencyCheck = endNode.left
-			node.left = endNode.left
-
-			sideToUpdateOnExistingNode = skRight
-			existingNodeAddress = endNode.left
-		}
-
-		endNodeUpdateBuilder := newExpresionBuilder()
-		endNodeUpdateBuilder.conditionEquality(sideToUpdateOnEndNode, StringValue{endNodeConcurrencyCheck})
-		endNodeUpdateBuilder.updateSET(sideToUpdateOnEndNode, StringValue{node.address})
-
+		currentEndNodeUpdater := newExpresionBuilder()
+		currentEndNodeUpdater.conditionEquality(currentEndNode.prevAttributeNameFrom(side), StringValue{NULL})
+		currentEndNodeUpdater.updateSET(currentEndNode.prevAttributeNameFrom(side), StringValue{node.address})
 		transactionItems = append(transactionItems, dynamodb.TransactWriteItem{
 			Update: &dynamodb.Update{
-				ConditionExpression:       endNodeUpdateBuilder.conditionExpression(),
-				ExpressionAttributeNames:  endNodeUpdateBuilder.expressionAttributeNames(),
-				ExpressionAttributeValues: endNodeUpdateBuilder.expressionAttributeValues(),
-				Key:                       endNode.keyAV(),
+				ConditionExpression:       currentEndNodeUpdater.conditionExpression(),
+				ExpressionAttributeNames:  currentEndNodeUpdater.expressionAttributeNames(),
+				ExpressionAttributeValues: currentEndNodeUpdater.expressionAttributeValues(),
+				Key:                       currentEndNode.keyAV(),
 				TableName:                 aws.String(c.table),
-				UpdateExpression:          endNodeUpdateBuilder.updateExpression(),
-			},
-		})
-
-		oldNodeUpdateBuilder := newExpresionBuilder()
-		oldNodeUpdateBuilder.updateSET(sideToUpdateOnExistingNode, StringValue{node.address})
-		transactionItems = append(transactionItems, dynamodb.TransactWriteItem{
-			Update: &dynamodb.Update{
-				ConditionExpression:       oldNodeUpdateBuilder.conditionExpression(),
-				ExpressionAttributeNames:  oldNodeUpdateBuilder.expressionAttributeNames(),
-				ExpressionAttributeValues: oldNodeUpdateBuilder.expressionAttributeValues(),
-				Key: listNode{
-					key:     key,
-					address: existingNodeAddress,
-				}.keyAV(),
-				TableName:        aws.String(c.table),
-				UpdateExpression: oldNodeUpdateBuilder.updateExpression(),
+				UpdateExpression:          currentEndNodeUpdater.updateExpression(),
 			},
 		})
 	} else {
-		endNode := listNode{
-			key:   key,
-			value: NULL,
-		}
-		otherEndNode := listNode{
-			key:   key,
-			value: NULL,
-		}
-		switch side {
-		case Left:
-			endNode.address = HEAD
-			endNode.left = NULL
-			endNode.right = node.address
-
-			otherEndNode.address = TAIL
-			otherEndNode.left = node.address
-			otherEndNode.right = NULL
-
-		case Right:
-			endNode.address = TAIL
-			endNode.left = node.address
-			endNode.right = NULL
-
-			otherEndNode.address = HEAD
-			otherEndNode.right = NULL
-			otherEndNode.left = node.address
-		}
-		node.left = HEAD
-		node.right = TAIL
-
-		nonExistenceConditionBuilder := newExpresionBuilder()
-		nonExistenceConditionBuilder.conditionNonExistence(pk)
-		transactionItems = append(transactionItems, dynamodb.TransactWriteItem{
-			Put: &dynamodb.Put{
-				ConditionExpression:       nonExistenceConditionBuilder.conditionExpression(),
-				ExpressionAttributeNames:  nonExistenceConditionBuilder.expressionAttributeNames(),
-				ExpressionAttributeValues: nonExistenceConditionBuilder.expressionAttributeValues(),
-				Item:                      endNode.toAV(),
-				TableName:                 aws.String(c.table),
-			},
-		})
-		transactionItems = append(transactionItems, dynamodb.TransactWriteItem{
-			Put: &dynamodb.Put{
-				ConditionExpression:       nonExistenceConditionBuilder.conditionExpression(),
-				ExpressionAttributeNames:  nonExistenceConditionBuilder.expressionAttributeNames(),
-				ExpressionAttributeValues: nonExistenceConditionBuilder.expressionAttributeValues(),
-				Item:                      otherEndNode.toAV(),
-				TableName:                 aws.String(c.table),
-			},
-		})
+		// start the list with a constant address - this prevents multiple calls from overwriting it
+		node.address = key
+		node.left = NULL
+		node.right = NULL
 	}
-	// Let's add the node itself into the transaction, unconditionally. There's enough failure checks everywhere else.
+
+	nodePutter := newExpresionBuilder()
+	nodePutter.addConditionNotExists(pk)
 	transactionItems = append(transactionItems, dynamodb.TransactWriteItem{
 		Put: &dynamodb.Put{
-			Item:      node.toAV(),
-			TableName: aws.String(c.table),
+			ConditionExpression:       nodePutter.conditionExpression(),
+			ExpressionAttributeNames:  nodePutter.expressionAttributeNames(),
+			ExpressionAttributeValues: nodePutter.expressionAttributeValues(),
+			Item:                      node.toAV(),
+			TableName:                 aws.String(c.table),
 		},
 	})
 
@@ -324,17 +236,30 @@ func (c Client) listPush(key string, element string, side Side) error {
 }
 
 func (c Client) listEnd(key string, side Side) (node listNode, found bool, err error) {
-	sideAddressMap := map[Side]string{
-		Left:  HEAD,
-		Right: TAIL,
+	node.key = key
+	queryCondition := newExpresionBuilder()
+	queryCondition.conditionEquality(pk, StringValue{node.key})
+	queryCondition.conditionEquality(node.prevAttributeNameFrom(side), StringValue{NULL})
+	resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
+		ConsistentRead:            aws.Bool(true),
+		ExpressionAttributeNames:  queryCondition.expressionAttributeNames(),
+		ExpressionAttributeValues: queryCondition.expressionAttributeValues(),
+		IndexName:                 c.getIndex(node.prevAttributeNameFrom(side)),
+		KeyConditionExpression:    queryCondition.conditionExpression(),
+		Limit:                     aws.Int64(1),
+		TableName:                 aws.String(c.table),
+	}).Send(context.TODO())
+	if err != nil || len(resp.Items) == 0 {
+		return
 	}
-
-	return c.listGet(key, sideAddressMap[side])
+	found = true
+	node = parseListNode(resp.Items[0])
+	return c.listGet(key, node.address)
 }
 
 func (c Client) listGet(key string, address string) (node listNode, found bool, err error) {
 	resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
-		ConsistentRead: aws.Bool(c.consistentReads),
+		ConsistentRead: aws.Bool(true),
 		Key: listNode{
 			key:     key,
 			address: address,
@@ -367,6 +292,8 @@ func (c Client) LRANGE(key string, start, stop int64) (elements []string, err er
 
 	var lastKey map[string]dynamodb.AttributeValue
 
+	var headAddress string
+
 	for hasMoreResults {
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 			ConsistentRead:            aws.Bool(c.consistentReads),
@@ -389,6 +316,9 @@ func (c Client) LRANGE(key string, start, stop int64) (elements []string, err er
 		for _, rawNode := range resp.Items {
 			node := parseListNode(rawNode)
 			nodeMap[node.address] = node
+			if node.left == NULL {
+				headAddress = node.address
+			}
 		}
 	}
 
@@ -396,9 +326,7 @@ func (c Client) LRANGE(key string, start, stop int64) (elements []string, err er
 		return
 	}
 
-	delete(nodeMap, TAIL)
-	runner, found := nodeMap[nodeMap[HEAD].right]
-
+	runner, found := nodeMap[headAddress]
 	for found {
 		elements = append(elements, runner.value)
 		runner, found = nodeMap[runner.right]

@@ -40,8 +40,8 @@ const (
 	sk4       = "sk4"
 	vk        = "val"
 	emptySK   = "/"
-	skLeft    = sk2
-	skRight   = sk3
+	skLeft    = sk3
+	skRight   = sk4
 	skScore   = sk2
 	skElement = sk
 	skHash    = sk4
@@ -127,7 +127,7 @@ func (b *expressionBuilder) updateSET(attributeName string, value Value) {
 	b.SET(fmt.Sprintf("#%v = :%v", attributeName, attributeName), attributeName, value.toAV())
 }
 
-func (b *expressionBuilder) conditionNonExistence(attributeName string) {
+func (b *expressionBuilder) addConditionNotExists(attributeName string) {
 	b.condition(fmt.Sprintf("attribute_not_exists(#%v)", attributeName), attributeName)
 }
 
