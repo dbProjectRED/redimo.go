@@ -344,6 +344,15 @@ func (c Client) LRANGE(key string, start, stop int64) (elements []string, err er
 		runner, found = nodeMap[runner.right]
 	}
 
+	switch {
+	case start >= 0 && stop > 0:
+		elements = elements[start : stop+1]
+	case start >= 0 && stop < 0:
+		elements = elements[start:(int64(len(elements)) + stop + 1)]
+	case start < 0 && stop < 0:
+		elements = elements[(int64(len(elements)) + start):(int64(len(elements)) + stop + 1)]
+	}
+
 	return
 }
 
