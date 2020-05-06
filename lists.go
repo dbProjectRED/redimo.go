@@ -16,22 +16,6 @@ const (
 	Right Side = "RIGHT"
 )
 
-func (c Client) LINDEX(key string, index int64) (element string, err error) {
-	return
-}
-
-func (c Client) LINSERT(key string, side Side, pivotElement string) (newLength int64, err error) {
-	return
-}
-
-func (c Client) LLEN(key string) (length int64, err error) {
-	return
-}
-
-func (c Client) LPOP(key string) (element string, ok bool, err error) {
-	return
-}
-
 type listNode struct {
 	key     string
 	address string
@@ -73,117 +57,25 @@ func parseListNode(avm map[string]dynamodb.AttributeValue) (ln listNode) {
 	return
 }
 
+func (c Client) LINDEX(key string, index int64) (element string, err error) {
+	return
+}
+
+func (c Client) LINSERT(key string, side Side, pivotElement string) (newLength int64, err error) {
+	return
+}
+
+func (c Client) LLEN(key string) (length int64, err error) {
+	return
+}
+
+func (c Client) LPOP(key string) (element string, ok bool, err error) {
+	return
+}
+
 func (c Client) LPUSH(key string, elements ...string) (newLength int64, err error) {
 	for _, element := range elements {
-		var transactionItems []dynamodb.TransactWriteItem
-		node := listNode{
-			key:     key,
-			address: ulid.MustNew(ulid.Now(), rand.Reader).String(),
-			left:    HEAD,
-			right:   "",
-			value:   element,
-		}
-		newHeadNode := listNode{
-			key:     key,
-			address: HEAD,
-			left:    NULL,
-			right:   node.address,
-			value:   NULL,
-		}
-		oldHead, found, err := c._END(key, Left)
-
-		if err != nil {
-			return newLength, err
-		}
-		if found {
-			// if we already have a HEAD, then we need to
-			// 1. set the `right` on our new node to the old node
-			// 2. update the HEAD to the address of our new node
-			// 3. update the old node's `left` to point to our new node
-
-			// 1.
-			node.right = oldHead.right
-
-			// 2. Need to update the head. Should fail if another transaction has already changed it
-			headUpdateBuilder := newExpresionBuilder()
-			headUpdateBuilder.conditionEquality(skRight, StringValue{oldHead.right})
-			headUpdateBuilder.updateSET(skRight, StringValue{node.address})
-
-			transactionItems = append(transactionItems, dynamodb.TransactWriteItem{
-				Update: &dynamodb.Update{
-					ConditionExpression:       headUpdateBuilder.conditionExpression(),
-					ExpressionAttributeNames:  headUpdateBuilder.expressionAttributeNames(),
-					ExpressionAttributeValues: headUpdateBuilder.expressionAttributeValues(),
-					Key:                       newHeadNode.keyAV(),
-					TableName:                 aws.String(c.table),
-					UpdateExpression:          headUpdateBuilder.updateExpression(),
-				},
-			})
-
-			// 3. also update the node  at the old head to point at the new node
-			// this need not be conditional - if the head has changed we'll already fail
-			oldNodeUpdateBuilder := newExpresionBuilder()
-			oldNodeUpdateBuilder.updateSET(skLeft, StringValue{node.address})
-
-			transactionItems = append(transactionItems, dynamodb.TransactWriteItem{
-				Update: &dynamodb.Update{
-					ConditionExpression:       oldNodeUpdateBuilder.conditionExpression(),
-					ExpressionAttributeNames:  oldNodeUpdateBuilder.expressionAttributeNames(),
-					ExpressionAttributeValues: oldNodeUpdateBuilder.expressionAttributeValues(),
-					Key: listNode{
-						key:     key,
-						address: oldHead.right,
-					}.keyAV(),
-					TableName:        aws.String(c.table),
-					UpdateExpression: oldNodeUpdateBuilder.updateExpression(),
-				},
-			})
-		} else {
-			// if we don't have a HEAD, this is a new list - let's make a TAIL node as well. Can
-			// condition it to fail if another transaction already inserts it.
-			// Then we PUT the HEAD and TAIL nodes as well, with conditions to make sure they don't already exist.
-			newTailNode := listNode{
-				key:     key,
-				address: TAIL,
-				left:    node.address,
-				right:   NULL,
-				value:   NULL,
-			}
-
-			nonExistenceConditionBuilder := newExpresionBuilder()
-			nonExistenceConditionBuilder.conditionNonExistence(pk)
-			transactionItems = append(transactionItems, dynamodb.TransactWriteItem{
-				Put: &dynamodb.Put{
-					ConditionExpression:       nonExistenceConditionBuilder.conditionExpression(),
-					ExpressionAttributeNames:  nonExistenceConditionBuilder.expressionAttributeNames(),
-					ExpressionAttributeValues: nonExistenceConditionBuilder.expressionAttributeValues(),
-					Item:                      newHeadNode.toAV(),
-					TableName:                 aws.String(c.table),
-				},
-			})
-			transactionItems = append(transactionItems, dynamodb.TransactWriteItem{
-				Put: &dynamodb.Put{
-					ConditionExpression:       nonExistenceConditionBuilder.conditionExpression(),
-					ExpressionAttributeNames:  nonExistenceConditionBuilder.expressionAttributeNames(),
-					ExpressionAttributeValues: nonExistenceConditionBuilder.expressionAttributeValues(),
-					Item:                      newTailNode.toAV(),
-					TableName:                 aws.String(c.table),
-				},
-			})
-
-			node.right = newTailNode.address
-		}
-		// Let's add the node itself into the transaction, unconditionally. There's enough failure checks everywhere else.
-		transactionItems = append(transactionItems, dynamodb.TransactWriteItem{
-			Put: &dynamodb.Put{
-				Item:      node.toAV(),
-				TableName: aws.String(c.table),
-			},
-		})
-
-		_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
-			TransactItems: transactionItems,
-		}).Send(context.TODO())
+		err = c.listPush(key, element, Left)
 		if err != nil {
 			return newLength, err
 		}
@@ -193,7 +85,154 @@ func (c Client) LPUSH(key string, elements ...string) (newLength int64, err erro
 	return
 }
 
-func (c Client) _END(key string, side Side) (node listNode, found bool, err error) {
+// When a node is added to either end, three actions must always be performed.
+// 1. The end-cap must be created or updated
+// 2. The node must be inserted with the one side pointing at the end cap
+// 3. The side of the node needs to be updated to point at the node.
+// 3.a. If this is a new list, the other-end cap needs to be created
+func (c Client) listPush(key string, element string, side Side) error {
+	var transactionItems []dynamodb.TransactWriteItem
+	node := listNode{
+		key:     key,
+		address: ulid.MustNew(ulid.Now(), rand.Reader).String(),
+		value:   element,
+	}
+
+	switch side {
+	case Left:
+		node.left = HEAD
+	case Right:
+		node.right = TAIL
+	}
+
+	endNode, existingList, err := c.listEnd(key, side)
+
+	if err != nil {
+		return err
+	}
+	if existingList {
+		var endNodeConcurrencyCheck string
+		var sideToUpdateOnEndNode string
+		var sideToUpdateOnExistingNode string
+		var existingNodeAddress string
+		switch side {
+		case Left:
+			sideToUpdateOnEndNode = skRight
+			endNodeConcurrencyCheck = endNode.right
+			node.right = endNode.right
+
+			sideToUpdateOnExistingNode = skLeft
+			existingNodeAddress = endNode.right
+
+		case Right:
+			sideToUpdateOnEndNode = skLeft
+			endNodeConcurrencyCheck = endNode.left
+			node.left = endNode.left
+
+			sideToUpdateOnExistingNode = skRight
+			existingNodeAddress = endNode.left
+		}
+
+		endNodeUpdateBuilder := newExpresionBuilder()
+		endNodeUpdateBuilder.conditionEquality(sideToUpdateOnEndNode, StringValue{endNodeConcurrencyCheck})
+		endNodeUpdateBuilder.updateSET(sideToUpdateOnEndNode, StringValue{node.address})
+
+		transactionItems = append(transactionItems, dynamodb.TransactWriteItem{
+			Update: &dynamodb.Update{
+				ConditionExpression:       endNodeUpdateBuilder.conditionExpression(),
+				ExpressionAttributeNames:  endNodeUpdateBuilder.expressionAttributeNames(),
+				ExpressionAttributeValues: endNodeUpdateBuilder.expressionAttributeValues(),
+				Key:                       endNode.keyAV(),
+				TableName:                 aws.String(c.table),
+				UpdateExpression:          endNodeUpdateBuilder.updateExpression(),
+			},
+		})
+
+		oldNodeUpdateBuilder := newExpresionBuilder()
+		oldNodeUpdateBuilder.updateSET(sideToUpdateOnExistingNode, StringValue{node.address})
+		transactionItems = append(transactionItems, dynamodb.TransactWriteItem{
+			Update: &dynamodb.Update{
+				ConditionExpression:       oldNodeUpdateBuilder.conditionExpression(),
+				ExpressionAttributeNames:  oldNodeUpdateBuilder.expressionAttributeNames(),
+				ExpressionAttributeValues: oldNodeUpdateBuilder.expressionAttributeValues(),
+				Key: listNode{
+					key:     key,
+					address: existingNodeAddress,
+				}.keyAV(),
+				TableName:        aws.String(c.table),
+				UpdateExpression: oldNodeUpdateBuilder.updateExpression(),
+			},
+		})
+	} else {
+		endNode := listNode{
+			key:   key,
+			value: NULL,
+		}
+		otherEndNode := listNode{
+			key:   key,
+			value: NULL,
+		}
+		switch side {
+		case Left:
+			endNode.address = HEAD
+			endNode.left = NULL
+			endNode.right = node.address
+
+			otherEndNode.address = TAIL
+			otherEndNode.left = node.address
+			otherEndNode.right = NULL
+
+		case Right:
+			endNode.address = TAIL
+			endNode.left = node.address
+			endNode.right = NULL
+
+			otherEndNode.address = HEAD
+			otherEndNode.right = NULL
+			otherEndNode.left = node.address
+		}
+		node.left = HEAD
+		node.right = TAIL
+
+		nonExistenceConditionBuilder := newExpresionBuilder()
+		nonExistenceConditionBuilder.conditionNonExistence(pk)
+		transactionItems = append(transactionItems, dynamodb.TransactWriteItem{
+			Put: &dynamodb.Put{
+				ConditionExpression:       nonExistenceConditionBuilder.conditionExpression(),
+				ExpressionAttributeNames:  nonExistenceConditionBuilder.expressionAttributeNames(),
+				ExpressionAttributeValues: nonExistenceConditionBuilder.expressionAttributeValues(),
+				Item:                      endNode.toAV(),
+				TableName:                 aws.String(c.table),
+			},
+		})
+		transactionItems = append(transactionItems, dynamodb.TransactWriteItem{
+			Put: &dynamodb.Put{
+				ConditionExpression:       nonExistenceConditionBuilder.conditionExpression(),
+				ExpressionAttributeNames:  nonExistenceConditionBuilder.expressionAttributeNames(),
+				ExpressionAttributeValues: nonExistenceConditionBuilder.expressionAttributeValues(),
+				Item:                      otherEndNode.toAV(),
+				TableName:                 aws.String(c.table),
+			},
+		})
+	}
+	// Let's add the node itself into the transaction, unconditionally. There's enough failure checks everywhere else.
+	transactionItems = append(transactionItems, dynamodb.TransactWriteItem{
+		Put: &dynamodb.Put{
+			Item:      node.toAV(),
+			TableName: aws.String(c.table),
+		},
+	})
+
+	_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
+		TransactItems: transactionItems,
+	}).Send(context.TODO())
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c Client) listEnd(key string, side Side) (node listNode, found bool, err error) {
 	sideAddressMap := map[Side]string{
 		Left:  HEAD,
 		Right: TAIL,
@@ -294,6 +333,14 @@ func (c Client) RPOPLPUSH(sourceKey string, destinationKey string) (element stri
 }
 
 func (c Client) RPUSH(key string, elements ...string) (newLength int64, err error) {
+	for _, element := range elements {
+		err = c.listPush(key, element, Right)
+		if err != nil {
+			return newLength, err
+		}
+		newLength++
+	}
+
 	return
 }
 
