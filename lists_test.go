@@ -74,6 +74,14 @@ func TestLBasics(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"twinkle", "little"}, elements)
 
+	elements, err = c.LRANGE("l1", -2, -3)
+	assert.NoError(t, err)
+	assert.Empty(t, elements)
+
+	elements, err = c.LRANGE("l1", 3, 2)
+	assert.NoError(t, err)
+	assert.Empty(t, elements)
+
 	_, err = c.RPUSHX("nonexistentlist", "car")
 	assert.NoError(t, err)
 
