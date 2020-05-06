@@ -3,7 +3,6 @@ package redimo
 import (
 	"context"
 	"crypto/rand"
-	"log"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -26,8 +25,6 @@ type listNode struct {
 }
 
 const NULL = "NULL"
-const HEAD = "HEAD"
-const TAIL = "TAIL"
 
 func (ln listNode) toAV() map[string]dynamodb.AttributeValue {
 	avm := map[string]dynamodb.AttributeValue{}
@@ -48,37 +45,29 @@ func (ln listNode) keyAV() map[string]dynamodb.AttributeValue {
 	return avm
 }
 
-func (ln listNode) nextAddressFrom(side Side) (address string) {
+func (ln listNode) next(side Side) (address string) {
 	switch side {
 	case Left:
 		address = ln.right
 	case Right:
 		address = ln.left
 	}
+
 	return
 }
 
-func (ln listNode) nextAttributeNameFrom(side Side) (attribute string) {
-	switch side {
-	case Left:
-		attribute = skRight
-	case Right:
-		attribute = skLeft
-	}
-	return
-}
-
-func (ln listNode) prevAttributeNameFrom(side Side) (attribute string) {
+func (ln listNode) prevAttr(side Side) (attribute string) {
 	switch side {
 	case Left:
 		attribute = skLeft
 	case Right:
 		attribute = skRight
 	}
+
 	return
 }
 
-func (ln *listNode) setNextFrom(side Side, address string) {
+func (ln *listNode) setNext(side Side, address string) {
 	switch side {
 	case Left:
 		ln.right = address
@@ -87,7 +76,7 @@ func (ln *listNode) setNextFrom(side Side, address string) {
 	}
 }
 
-func (ln *listNode) setPrevFrom(side Side, address string) {
+func (ln *listNode) setPrev(side Side, address string) {
 	switch side {
 	case Left:
 		ln.left = address
@@ -130,13 +119,13 @@ func (c Client) listPop(key string, side Side) (element string, ok bool, err err
 
 	var transactItems []dynamodb.TransactWriteItem
 
-	penultimateNodeAddress := endNode.nextAddressFrom(side)
+	penultimateNodeAddress := endNode.next(side)
 	if penultimateNodeAddress != NULL {
 		penultimateKeyNode := listNode{key: key, address: penultimateNodeAddress}
 		penultimateNodeUpdater := newExpresionBuilder()
-		penultimateNodeUpdater.conditionEquality(penultimateKeyNode.prevAttributeNameFrom(side), StringValue{endNode.address})
-		penultimateNodeUpdater.updateSET(penultimateKeyNode.prevAttributeNameFrom(side), StringValue{NULL})
-		log.Println("k2y", penultimateKeyNode.key, "add:", penultimateKeyNode.address)
+		penultimateNodeUpdater.conditionEquality(penultimateKeyNode.prevAttr(side), StringValue{endNode.address})
+		penultimateNodeUpdater.updateSET(penultimateKeyNode.prevAttr(side), StringValue{NULL})
+
 		transactItems = append(transactItems, dynamodb.TransactWriteItem{
 			Update: &dynamodb.Update{
 				ConditionExpression:       penultimateNodeUpdater.conditionExpression(),
@@ -148,6 +137,7 @@ func (c Client) listPop(key string, side Side) (element string, ok bool, err err
 			},
 		})
 	}
+
 	transactItems = append(transactItems, dynamodb.TransactWriteItem{
 		Delete: &dynamodb.Delete{
 			Key:       endNode.keyAV(),
@@ -161,13 +151,13 @@ func (c Client) listPop(key string, side Side) (element string, ok bool, err err
 	if err != nil {
 		return element, ok, err
 	}
-	return endNode.value, true, nil
 
+	return endNode.value, true, nil
 }
 
 func (c Client) LPUSH(key string, elements ...string) (newLength int64, err error) {
 	for _, element := range elements {
-		err = c.listPush(key, element, Left)
+		err = c.listPush(key, element, Left, Flags{})
 		if err != nil {
 			return newLength, err
 		}
@@ -177,8 +167,9 @@ func (c Client) LPUSH(key string, elements ...string) (newLength int64, err erro
 	return
 }
 
-func (c Client) listPush(key string, element string, side Side) error {
+func (c Client) listPush(key string, element string, side Side, flags Flags) error {
 	var transactionItems []dynamodb.TransactWriteItem
+
 	node := listNode{
 		key:   key,
 		value: element,
@@ -189,14 +180,19 @@ func (c Client) listPush(key string, element string, side Side) error {
 		return err
 	}
 
+	if !existingList && flags != nil && flags.has(IfAlreadyExists) {
+		return nil
+	}
+
 	if existingList {
 		node.address = ulid.MustNew(ulid.Now(), rand.Reader).String()
-		node.setNextFrom(side, currentEndNode.address)
-		node.setPrevFrom(side, NULL)
+		node.setNext(side, currentEndNode.address)
+		node.setPrev(side, NULL)
 
 		currentEndNodeUpdater := newExpresionBuilder()
-		currentEndNodeUpdater.conditionEquality(currentEndNode.prevAttributeNameFrom(side), StringValue{NULL})
-		currentEndNodeUpdater.updateSET(currentEndNode.prevAttributeNameFrom(side), StringValue{node.address})
+		currentEndNodeUpdater.conditionEquality(currentEndNode.prevAttr(side), StringValue{NULL})
+		currentEndNodeUpdater.updateSET(currentEndNode.prevAttr(side), StringValue{node.address})
+
 		transactionItems = append(transactionItems, dynamodb.TransactWriteItem{
 			Update: &dynamodb.Update{
 				ConditionExpression:       currentEndNodeUpdater.conditionExpression(),
@@ -216,6 +212,7 @@ func (c Client) listPush(key string, element string, side Side) error {
 
 	nodePutter := newExpresionBuilder()
 	nodePutter.addConditionNotExists(pk)
+
 	transactionItems = append(transactionItems, dynamodb.TransactWriteItem{
 		Put: &dynamodb.Put{
 			ConditionExpression:       nodePutter.conditionExpression(),
@@ -232,6 +229,7 @@ func (c Client) listPush(key string, element string, side Side) error {
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -239,21 +237,25 @@ func (c Client) listEnd(key string, side Side) (node listNode, found bool, err e
 	node.key = key
 	queryCondition := newExpresionBuilder()
 	queryCondition.conditionEquality(pk, StringValue{node.key})
-	queryCondition.conditionEquality(node.prevAttributeNameFrom(side), StringValue{NULL})
+	queryCondition.conditionEquality(node.prevAttr(side), StringValue{NULL})
+
 	resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 		ConsistentRead:            aws.Bool(true),
 		ExpressionAttributeNames:  queryCondition.expressionAttributeNames(),
 		ExpressionAttributeValues: queryCondition.expressionAttributeValues(),
-		IndexName:                 c.getIndex(node.prevAttributeNameFrom(side)),
+		IndexName:                 c.getIndex(node.prevAttr(side)),
 		KeyConditionExpression:    queryCondition.conditionExpression(),
 		Limit:                     aws.Int64(1),
 		TableName:                 aws.String(c.table),
 	}).Send(context.TODO())
+
 	if err != nil || len(resp.Items) == 0 {
 		return
 	}
+
 	found = true
 	node = parseListNode(resp.Items[0])
+
 	return c.listGet(key, node.address)
 }
 
@@ -275,19 +277,28 @@ func (c Client) listGet(key string, address string) (node listNode, found bool, 
 		found = true
 		node = parseListNode(resp.Item)
 	}
+
 	return
 }
 
 func (c Client) LPUSHX(key string, elements ...string) (newLength int64, err error) {
+	for _, element := range elements {
+		err = c.listPush(key, element, Left, Flags{IfAlreadyExists})
+		if err != nil {
+			return newLength, err
+		}
+		newLength++
+	}
+
 	return
 }
 
 func (c Client) LRANGE(key string, start, stop int64) (elements []string, err error) {
+	nodeMap := make(map[string]listNode)
 	// The most common case is a full fetch, so let's start with that for now.
 	queryCondition := newExpresionBuilder()
 	queryCondition.conditionEquality(pk, StringValue{key})
 
-	nodeMap := make(map[string]listNode)
 	hasMoreResults := true
 
 	var lastKey map[string]dynamodb.AttributeValue
@@ -316,6 +327,7 @@ func (c Client) LRANGE(key string, start, stop int64) (elements []string, err er
 		for _, rawNode := range resp.Items {
 			node := parseListNode(rawNode)
 			nodeMap[node.address] = node
+
 			if node.left == NULL {
 				headAddress = node.address
 			}
@@ -357,7 +369,7 @@ func (c Client) RPOPLPUSH(sourceKey string, destinationKey string) (element stri
 
 func (c Client) RPUSH(key string, elements ...string) (newLength int64, err error) {
 	for _, element := range elements {
-		err = c.listPush(key, element, Right)
+		err = c.listPush(key, element, Right, nil)
 		if err != nil {
 			return newLength, err
 		}
@@ -368,5 +380,13 @@ func (c Client) RPUSH(key string, elements ...string) (newLength int64, err erro
 }
 
 func (c Client) RPUSHX(key string, elements ...string) (newLength int64, err error) {
+	for _, element := range elements {
+		err = c.listPush(key, element, Right, Flags{IfAlreadyExists})
+		if err != nil {
+			return newLength, err
+		}
+		newLength++
+	}
+
 	return
 }

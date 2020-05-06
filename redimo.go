@@ -33,18 +33,15 @@ func (c Client) getIndex(attribute string) *string {
 }
 
 const (
-	pk        = "pk"
-	sk        = "sk"
-	sk2       = "sk2"
-	sk3       = "sk3"
-	sk4       = "sk4"
-	vk        = "val"
-	emptySK   = "/"
-	skLeft    = sk3
-	skRight   = sk4
-	skScore   = sk2
-	skElement = sk
-	skHash    = sk4
+	pk      = "pk"
+	sk      = "sk"
+	sk2     = "sk2"
+	sk3     = "sk3"
+	sk4     = "sk4"
+	vk      = "val"
+	emptySK = "/"
+	skLeft  = sk3
+	skRight = sk4
 )
 
 type expressionBuilder struct {

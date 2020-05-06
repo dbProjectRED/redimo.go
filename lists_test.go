@@ -47,4 +47,28 @@ func TestLBasics(t *testing.T) {
 	elements, err = c.LRANGE("l1", 0, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"twinkle", "little"}, elements)
+
+	_, err = c.LPUSHX("l1", "wrinkle")
+	assert.NoError(t, err)
+
+	elements, err = c.LRANGE("l1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"wrinkle", "twinkle", "little"}, elements)
+
+	_, err = c.RPUSHX("l1", "car")
+	assert.NoError(t, err)
+
+	elements, err = c.LRANGE("l1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"wrinkle", "twinkle", "little", "car"}, elements)
+
+	_, err = c.RPUSHX("nonexistentlist", "car")
+	assert.NoError(t, err)
+
+	_, err = c.LPUSHX("nonexistentlist", "car")
+	assert.NoError(t, err)
+
+	elements, err = c.LRANGE("nonexistentlist", 0, -1)
+	assert.NoError(t, err)
+	assert.Empty(t, elements)
 }
