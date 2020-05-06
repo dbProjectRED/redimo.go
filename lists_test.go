@@ -92,3 +92,72 @@ func TestLBasics(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Empty(t, elements)
 }
+
+func TestRPOPLPUSH(t *testing.T) {
+	c := newClient(t)
+
+	_, err := c.RPUSH("l1", "one", "two", "three", "four")
+	assert.NoError(t, err)
+
+	_, err = c.RPUSH("l2", "five", "six", "seven", "eight")
+	assert.NoError(t, err)
+
+	element, ok, err := c.RPOPLPUSH("l1", "l1")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, "four", element)
+
+	elements, err := c.LRANGE("l1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"four", "one", "two", "three"}, elements)
+
+	element, ok, err = c.RPOPLPUSH("l1", "l2")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, "three", element)
+
+	elements, err = c.LRANGE("l1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"four", "one", "two"}, elements)
+
+	elements, err = c.LRANGE("l2", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"three", "five", "six", "seven", "eight"}, elements)
+
+	element, ok, err = c.RPOPLPUSH("l1", "l1")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, "two", element)
+
+	elements, err = c.LRANGE("l1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"two", "four", "one"}, elements)
+
+	element, ok, err = c.RPOPLPUSH("l1", "newList")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, "one", element)
+
+	elements, err = c.LRANGE("l1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"two", "four"}, elements)
+
+	elements, err = c.LRANGE("newList", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"one"}, elements)
+
+	//c.LPOP("l1")
+	//
+	//elements, err = c.LRANGE("l1", 0, -1)
+	//assert.NoError(t, err)
+	//assert.Equal(t, []string{"one", "two"}, elements)
+	//
+	//element, ok, err = c.RPOPLPUSH("l1", "l1")
+	//assert.NoError(t, err)
+	//assert.True(t, ok)
+	//assert.Equal(t, "one", element)
+	//
+	//elements, err = c.LRANGE("l1", 0, -1)
+	//assert.NoError(t, err)
+	//assert.Equal(t, []string{"two", "one"}, elements)
+}

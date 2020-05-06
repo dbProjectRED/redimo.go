@@ -112,12 +112,29 @@ func (c Client) LPOP(key string) (element string, ok bool, err error) {
 }
 
 func (c Client) listPop(key string, side Side) (element string, ok bool, err error) {
+	element, transactItems, ok, err := c.listPopTransactionItems(key, side)
+	if err != nil || !ok {
+		return
+	}
+
+	_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
+		TransactItems: transactItems,
+	}).Send(context.TODO())
+
+	if err != nil {
+		return element, ok, err
+	}
+
+	return element, true, nil
+}
+
+func (c Client) listPopTransactionItems(key string, side Side) (element string, transactItems []dynamodb.TransactWriteItem, ok bool, err error) {
 	endNode, ok, err := c.listEnd(key, side)
 	if err != nil || !ok {
 		return
 	}
 
-	var transactItems []dynamodb.TransactWriteItem
+	element = endNode.value
 
 	penultimateNodeAddress := endNode.next(side)
 	if penultimateNodeAddress != NULL {
@@ -145,14 +162,7 @@ func (c Client) listPop(key string, side Side) (element string, ok bool, err err
 		},
 	})
 
-	_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
-		TransactItems: transactItems,
-	}).Send(context.TODO())
-	if err != nil {
-		return element, ok, err
-	}
-
-	return endNode.value, true, nil
+	return
 }
 
 func (c Client) LPUSH(key string, elements ...string) (newLength int64, err error) {
@@ -168,8 +178,23 @@ func (c Client) LPUSH(key string, elements ...string) (newLength int64, err erro
 }
 
 func (c Client) listPush(key string, element string, side Side, flags Flags) error {
-	var transactionItems []dynamodb.TransactWriteItem
+	transactionItems, err := c.listPushTransactions(key, element, side, flags)
+	if err != nil || len(transactionItems) == 0 {
+		return err
+	}
 
+	_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
+		TransactItems: transactionItems,
+	}).Send(context.TODO())
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c Client) listPushTransactions(key string, element string, side Side, flags Flags) (transactionItems []dynamodb.TransactWriteItem, err error) {
 	node := listNode{
 		key:   key,
 		value: element,
@@ -177,11 +202,11 @@ func (c Client) listPush(key string, element string, side Side, flags Flags) err
 
 	currentEndNode, existingList, err := c.listEnd(key, side)
 	if err != nil {
-		return err
+		return
 	}
 
 	if !existingList && flags != nil && flags.has(IfAlreadyExists) {
-		return nil
+		return transactionItems, nil
 	}
 
 	if existingList {
@@ -223,14 +248,7 @@ func (c Client) listPush(key string, element string, side Side, flags Flags) err
 		},
 	})
 
-	_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
-		TransactItems: transactionItems,
-	}).Send(context.TODO())
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return
 }
 
 func (c Client) listEnd(key string, side Side) (node listNode, found bool, err error) {
@@ -373,6 +391,24 @@ func (c Client) RPOP(key string) (element string, ok bool, err error) {
 }
 
 func (c Client) RPOPLPUSH(sourceKey string, destinationKey string) (element string, ok bool, err error) {
+	element, popTransactionItems, ok, err := c.listPopTransactionItems(sourceKey, Right)
+	if err != nil || !ok {
+		return
+	}
+
+	pushTransactionItems, err := c.listPushTransactions(destinationKey, element, Left, Flags{})
+
+	if err != nil {
+		return
+	}
+
+	var transactItems []dynamodb.TransactWriteItem
+	transactItems = append(transactItems, popTransactionItems...)
+	transactItems = append(transactItems, pushTransactionItems...)
+	_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
+		TransactItems: transactItems,
+	}).Send(context.TODO())
+
 	return
 }
 
