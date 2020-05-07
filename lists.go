@@ -178,7 +178,12 @@ func (c Client) listNodeAtIndex(key string, index int64) (node listNode, found b
 	return node, false, nil
 }
 
-func (c Client) LINSERT(key string, side Side, pivotElement string) (newLength int64, err error) {
+// LINSERT inserts the given element on the given side of the pivot element.
+func (c Client) LINSERT(key string, side Side, pivot, element string) (newLength int64, err error) {
+	return
+}
+
+func (c Client) LINSERTBYINDEX(key string, side Side, index int64, element string) (newLength int64, err error) {
 	return
 }
 
@@ -453,7 +458,12 @@ func (c Client) LRANGE(key string, start, stop int64) (elements []string, err er
 	return
 }
 
-func (c Client) LREM(key string, count int64, element string) (removedCount int64, err error) {
+// LREM removes the first occurrence on the given side of the given element.
+func (c Client) LREM(key string, side Side, element string) (ok bool, err error) {
+	return
+}
+
+func (c Client) LREMBYINDEX(key string, index int64) (ok bool, err error) {
 	return
 }
 
@@ -481,10 +491,6 @@ func (c Client) LSET(key string, index int64, element string) (ok bool, err erro
 	}
 
 	return true, nil
-}
-
-func (c Client) LTRIM(key string, start, stop int64) (ok bool, err error) {
-	return
 }
 
 func (c Client) RPOP(key string) (element string, ok bool, err error) {
@@ -604,3 +610,5 @@ func (c Client) RPUSHX(key string, elements ...string) (newLength int64, err err
 
 	return
 }
+
+// LTRIM removed.
