@@ -143,8 +143,39 @@ func parseListNode(avm map[string]dynamodb.AttributeValue) (ln listNode) {
 	return
 }
 
-func (c Client) LINDEX(key string, index int64) (element string, err error) {
-	return
+func (c Client) LINDEX(key string, index int64) (element string, found bool, err error) {
+	node, found, err := c.listNodeAtIndex(key, index)
+	if err != nil {
+		return
+	}
+
+	return node.value, found, err
+}
+
+func (c Client) listNodeAtIndex(key string, index int64) (node listNode, found bool, err error) {
+	side := Left
+	if index < 0 {
+		side = Right
+		index = -index - 1
+	}
+
+	node, found, err = c.listEnd(key, side)
+	i := int64(0)
+
+	for found {
+		if err != nil {
+			return
+		}
+
+		if i == index {
+			return node, true, nil
+		}
+
+		node, found, err = c.listGet(key, node.next(side))
+		i++
+	}
+
+	return node, false, nil
 }
 
 func (c Client) LINSERT(key string, side Side, pivotElement string) (newLength int64, err error) {
@@ -427,7 +458,29 @@ func (c Client) LREM(key string, count int64, element string) (removedCount int6
 }
 
 func (c Client) LSET(key string, index int64, element string) (ok bool, err error) {
-	return
+	node, found, err := c.listNodeAtIndex(key, index)
+	if err != nil || !found {
+		return
+	}
+
+	updater := newExpresionBuilder()
+	updater.addConditionExists(pk)
+	updater.updateSET(vk, StringValue{element})
+
+	_, err = c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
+		ConditionExpression:       updater.conditionExpression(),
+		ExpressionAttributeNames:  updater.expressionAttributeNames(),
+		ExpressionAttributeValues: updater.expressionAttributeValues(),
+		Key:                       node.keyAV(),
+		TableName:                 aws.String(c.table),
+		UpdateExpression:          updater.updateExpression(),
+	}).Send(context.TODO())
+
+	if err != nil {
+		return
+	}
+
+	return true, nil
 }
 
 func (c Client) LTRIM(key string, start, stop int64) (ok bool, err error) {

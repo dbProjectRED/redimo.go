@@ -178,3 +178,72 @@ func TestRPOPLPUSH(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"two"}, elements)
 }
+
+func TestListIndexTraversal(t *testing.T) {
+	c := newClient(t)
+
+	_, err := c.RPUSH("l1", "inty", "minty", "papa", "tinty")
+	assert.NoError(t, err)
+
+	element, found, err := c.LINDEX("l1", 0)
+	assert.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "inty", element)
+
+	element, found, err = c.LINDEX("l1", 3)
+	assert.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "tinty", element)
+
+	_, found, err = c.LINDEX("l1", 4)
+	assert.NoError(t, err)
+	assert.False(t, found)
+
+	_, found, err = c.LINDEX("l1", 42)
+	assert.NoError(t, err)
+	assert.False(t, found)
+
+	element, found, err = c.LINDEX("l1", -1)
+	assert.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "tinty", element)
+
+	element, found, err = c.LINDEX("l1", -4)
+	assert.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "inty", element)
+
+	_, found, err = c.LINDEX("l1", -42)
+	assert.NoError(t, err)
+	assert.False(t, found)
+
+	ok, err := c.LSET("l1", 1, "monty")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+
+	element, found, err = c.LINDEX("l1", 1)
+	assert.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "monty", element)
+
+	ok, err = c.LSET("l1", -2, "mama")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+
+	element, found, err = c.LINDEX("l1", -2)
+	assert.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "mama", element)
+
+	ok, err = c.LSET("l1", 42, "no chance")
+	assert.NoError(t, err)
+	assert.False(t, ok)
+
+	count, err := c.LLEN("l1")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(4), count)
+
+	elements, err := c.LRANGE("l1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"inty", "monty", "mama", "tinty"}, elements)
+}

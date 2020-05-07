@@ -128,6 +128,10 @@ func (b *expressionBuilder) addConditionNotExists(attributeName string) {
 	b.condition(fmt.Sprintf("attribute_not_exists(#%v)", attributeName), attributeName)
 }
 
+func (b *expressionBuilder) addConditionExists(attributeName string) {
+	b.condition(fmt.Sprintf("attribute_exists(#%v)", attributeName), attributeName)
+}
+
 func newExpresionBuilder() expressionBuilder {
 	return expressionBuilder{
 		conditions: []string{},
