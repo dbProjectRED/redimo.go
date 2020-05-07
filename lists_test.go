@@ -49,6 +49,10 @@ func TestLBasics(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"twinkle", "little"}, elements)
 
+	count, err := c.LLEN("l1")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), count)
+
 	_, err = c.LPUSHX("l1", "wrinkle")
 	assert.NoError(t, err)
 

@@ -152,7 +152,7 @@ func (c Client) LINSERT(key string, side Side, pivotElement string) (newLength i
 }
 
 func (c Client) LLEN(key string) (length int64, err error) {
-	return
+	return c.HLEN(key)
 }
 
 func (c Client) LPOP(key string) (element string, ok bool, err error) {
@@ -422,7 +422,7 @@ func (c Client) LRANGE(key string, start, stop int64) (elements []string, err er
 	return
 }
 
-func (c Client) LREM(key string, count int64, elemenat string) (removedCount int64, err error) {
+func (c Client) LREM(key string, count int64, element string) (removedCount int64, err error) {
 	return
 }
 
