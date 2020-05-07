@@ -3,6 +3,7 @@ package redimo
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -56,6 +57,17 @@ func (ln listNode) next(side Side) (address string) {
 	return
 }
 
+func (ln listNode) prev(side Side) (address string) {
+	switch side {
+	case Left:
+		address = ln.left
+	case Right:
+		address = ln.right
+	}
+
+	return
+}
+
 func (ln listNode) prevAttr(side Side) (attribute string) {
 	switch side {
 	case Left:
@@ -82,6 +94,42 @@ func (ln *listNode) setPrev(side Side, address string) {
 		ln.left = address
 	case Right:
 		ln.right = address
+	}
+}
+
+func (ln listNode) updateBothSidesAction(newLeft string, newRight string, table string) dynamodb.TransactWriteItem {
+	updater := newExpresionBuilder()
+	updater.conditionEquality(skLeft, StringValue{ln.left})
+	updater.conditionEquality(skRight, StringValue{ln.right})
+	updater.updateSET(skLeft, StringValue{newLeft})
+	updater.updateSET(skRight, StringValue{newRight})
+
+	return dynamodb.TransactWriteItem{
+		Update: &dynamodb.Update{
+			ConditionExpression:       updater.conditionExpression(),
+			ExpressionAttributeNames:  updater.expressionAttributeNames(),
+			ExpressionAttributeValues: updater.expressionAttributeValues(),
+			Key:                       ln.keyAV(),
+			TableName:                 aws.String(table),
+			UpdateExpression:          updater.updateExpression(),
+		},
+	}
+}
+
+func (ln listNode) updateSide(side Side, newAddress string, table string) dynamodb.TransactWriteItem {
+	updater := newExpresionBuilder()
+	updater.conditionEquality(ln.prevAttr(side), StringValue{ln.prev(side)})
+	updater.updateSET(ln.prevAttr(side), StringValue{newAddress})
+
+	return dynamodb.TransactWriteItem{
+		Update: &dynamodb.Update{
+			ConditionExpression:       updater.conditionExpression(),
+			ExpressionAttributeNames:  updater.expressionAttributeNames(),
+			ExpressionAttributeValues: updater.expressionAttributeValues(),
+			Key:                       ln.keyAV(),
+			TableName:                 aws.String(table),
+			UpdateExpression:          updater.updateExpression(),
+		},
 	}
 }
 
@@ -391,6 +439,10 @@ func (c Client) RPOP(key string) (element string, ok bool, err error) {
 }
 
 func (c Client) RPOPLPUSH(sourceKey string, destinationKey string) (element string, ok bool, err error) {
+	if sourceKey == destinationKey {
+		return c.listRotate(sourceKey)
+	}
+
 	element, popTransactionItems, ok, err := c.listPopTransactionItems(sourceKey, Right)
 	if err != nil || !ok {
 		return
@@ -408,6 +460,70 @@ func (c Client) RPOPLPUSH(sourceKey string, destinationKey string) (element stri
 	_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
 		TransactItems: transactItems,
 	}).Send(context.TODO())
+
+	return
+}
+
+func (c Client) listRotate(key string) (element string, ok bool, err error) {
+	var actions []dynamodb.TransactWriteItem
+
+	rightEnd, ok, err := c.listEnd(key, Right)
+
+	if err != nil || !ok {
+		return
+	}
+
+	leftEnd, ok, err := c.listEnd(key, Left)
+	if err != nil || !ok {
+		return
+	}
+
+	switch {
+	case rightEnd.address == leftEnd.address:
+		element = rightEnd.value
+		// no action to take
+
+	case leftEnd.right == rightEnd.address:
+		actions = append(actions, leftEnd.updateBothSidesAction(rightEnd.address, NULL, c.table))
+		actions = append(actions, rightEnd.updateBothSidesAction(NULL, leftEnd.address, c.table))
+		element = rightEnd.value
+
+	case leftEnd.right == rightEnd.left:
+		middle, ok, err := c.listGet(key, leftEnd.right)
+		if err != nil {
+			return element, ok, err
+		}
+
+		if !ok {
+			return element, ok, errors.New("concurrent modification")
+		}
+
+		actions = append(actions, leftEnd.updateBothSidesAction(rightEnd.address, middle.address, c.table))
+		actions = append(actions, rightEnd.updateBothSidesAction(NULL, leftEnd.address, c.table))
+		actions = append(actions, middle.updateBothSidesAction(leftEnd.address, NULL, c.table))
+		element = rightEnd.value
+
+	default:
+		penultimateRight, ok, err := c.listGet(key, rightEnd.left)
+		if err != nil {
+			return element, ok, err
+		}
+
+		if !ok {
+			return element, ok, errors.New("concurrent modification")
+		}
+
+		actions = append(actions, leftEnd.updateSide(Left, rightEnd.address, c.table))
+		actions = append(actions, rightEnd.updateBothSidesAction(NULL, leftEnd.address, c.table))
+		actions = append(actions, penultimateRight.updateSide(Right, NULL, c.table))
+		element = rightEnd.value
+	}
+
+	if len(actions) > 0 {
+		_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
+			TransactItems: actions,
+		}).Send(context.TODO())
+	}
 
 	return
 }
