@@ -2,7 +2,6 @@ package redimo
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -148,10 +147,8 @@ func (c Client) SMEMBERS(key string) (members []string, err error) {
 
 	for hasMoreResults {
 		builder := newExpresionBuilder()
-		builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
-		builder.values[pk] = dynamodb.AttributeValue{
-			S: aws.String(key),
-		}
+		builder.addConditionEquality(pk, StringValue{key})
+
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 			ConsistentRead:            aws.Bool(c.consistentReads),
 			ExclusiveStartKey:         lastEvaluatedKey,
@@ -182,7 +179,7 @@ func (c Client) SMEMBERS(key string) (members []string, err error) {
 
 func (c Client) SMOVE(sourceKey string, destinationKey string, member string) (ok bool, err error) {
 	builder := newExpresionBuilder()
-	builder.condition(fmt.Sprintf("attribute_exists(#%v)", pk), pk)
+	builder.addConditionExists(pk)
 
 	_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
 		TransactItems: []dynamodb.TransactWriteItem{
@@ -230,10 +227,8 @@ func (c Client) SRANDMEMBER(key string, count int64) (members []string, err erro
 	}
 
 	builder := newExpresionBuilder()
-	builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
-	builder.values[pk] = dynamodb.AttributeValue{
-		S: aws.String(key),
-	}
+	builder.addConditionEquality(pk, StringValue{key})
+
 	resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 		ConsistentRead:            aws.Bool(c.consistentReads),
 		ExpressionAttributeNames:  builder.expressionAttributeNames(),

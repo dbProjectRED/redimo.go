@@ -114,7 +114,7 @@ func (b *expressionBuilder) updateExpression() *string {
 	return aws.String(strings.Join(clauses, " "))
 }
 
-func (b *expressionBuilder) conditionEquality(attributeName string, value Value) {
+func (b *expressionBuilder) addConditionEquality(attributeName string, value Value) {
 	valueName := "cval" + strconv.Itoa(len(b.conditions))
 	b.condition(fmt.Sprintf("#%v = :%v", attributeName, valueName), attributeName)
 	b.values[valueName] = value.toAV()

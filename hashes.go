@@ -2,7 +2,6 @@ package redimo
 
 import (
 	"context"
-	"fmt"
 	"math/big"
 	"strings"
 
@@ -67,7 +66,7 @@ func (c Client) HMSET(key string, fieldValues map[string]Value) (err error) {
 
 	for field, v := range fieldValues {
 		builder := newExpresionBuilder()
-		builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, v.toAV())
+		builder.updateSET(vk, v)
 
 		items = append(items, dynamodb.TransactWriteItem{
 			Update: &dynamodb.Update{
@@ -171,10 +170,7 @@ func (c Client) HGETALL(key string) (fieldValues map[string]Value, err error) {
 
 	for hasMoreResults {
 		builder := newExpresionBuilder()
-		builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
-		builder.values[pk] = dynamodb.AttributeValue{
-			S: aws.String(key),
-		}
+		builder.addConditionEquality(pk, StringValue{key})
 
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 			ConsistentRead:            aws.Bool(c.consistentReads),
@@ -243,10 +239,8 @@ func (c Client) HKEYS(key string) (keys []string, err error) {
 
 	for hasMoreResults {
 		builder := newExpresionBuilder()
-		builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
-		builder.values[pk] = dynamodb.AttributeValue{
-			S: aws.String(key),
-		}
+		builder.addConditionEquality(pk, StringValue{key})
+
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 			ConsistentRead:            aws.Bool(c.consistentReads),
 			ExclusiveStartKey:         lastEvaluatedKey,
@@ -295,10 +289,8 @@ func (c Client) HLEN(key string) (count int64, err error) {
 
 	for hasMoreResults {
 		builder := newExpresionBuilder()
-		builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
-		builder.values[pk] = dynamodb.AttributeValue{
-			S: aws.String(key),
-		}
+		builder.addConditionEquality(pk, StringValue{key})
+
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 			ConsistentRead:            aws.Bool(c.consistentReads),
 			ExclusiveStartKey:         lastEvaluatedKey,

@@ -84,8 +84,8 @@ func (c Client) ZCOUNT(key string, minScore, maxScore float64) (count int64, err
 
 func (c Client) _zGeneralCount(key string, min string, max string, attribute string) (count int64, err error) {
 	builder := newExpresionBuilder()
-	builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
-	builder.values[pk] = StringValue{key}.toAV()
+	builder.addConditionEquality(pk, StringValue{key})
+
 	betweenRange := min != "" && max != ""
 
 	if betweenRange {
@@ -155,11 +155,10 @@ func (c Client) ZINCRBY(key string, member string, delta float64) (newScore floa
 
 		newScore = oldScore + delta
 		builder := newExpresionBuilder()
-		builder.SET(fmt.Sprintf("#%v = :%v", sk2, sk2), sk2, StringValue{floatToLex(big.NewFloat(newScore))}.toAV())
+		builder.updateSET(sk2, StringValue{floatToLex(big.NewFloat(newScore))})
 
 		if ok {
-			builder.condition(fmt.Sprintf("#%v = :existingScore", sk2), sk2)
-			builder.values["existingScore"] = StringValue{floatToLex(big.NewFloat(oldScore))}.toAV()
+			builder.addConditionEquality(sk2, StringValue{floatToLex(big.NewFloat(oldScore))})
 		}
 
 		_, err = c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
@@ -292,8 +291,7 @@ func (c Client) _zGeneralRange(key string,
 		}
 
 		builder := newExpresionBuilder()
-		builder.condition(fmt.Sprintf("#%v = :%v", pk, pk), pk)
-		builder.values[pk] = StringValue{key}.toAV()
+		builder.addConditionEquality(pk, StringValue{key})
 
 		if start != "" {
 			builder.values["start"] = StringValue{start}.toAV()
@@ -374,7 +372,7 @@ func (c Client) _zrank(key string, member string, forward bool) (rank int64, ok 
 func (c Client) ZREM(key string, members ...string) (count int64, err error) {
 	for _, member := range members {
 		builder := newExpresionBuilder()
-		builder.condition(fmt.Sprintf("attribute_exists(#%v)", pk), pk)
+		builder.addConditionExists(pk)
 
 		_, err = c.ddbClient.DeleteItemRequest(&dynamodb.DeleteItemInput{
 			ConditionExpression:       builder.conditionExpression(),

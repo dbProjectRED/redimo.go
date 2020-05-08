@@ -111,8 +111,8 @@ func (ln *lNode) setPrev(side Side, address string) {
 
 func (ln lNode) updateBothSidesAction(newLeft string, newRight string, table string) dynamodb.TransactWriteItem {
 	updater := newExpresionBuilder()
-	updater.conditionEquality(skLeft, StringValue{ln.left})
-	updater.conditionEquality(skRight, StringValue{ln.right})
+	updater.addConditionEquality(skLeft, StringValue{ln.left})
+	updater.addConditionEquality(skRight, StringValue{ln.right})
 	updater.updateSET(skLeft, StringValue{newLeft})
 	updater.updateSET(skRight, StringValue{newRight})
 
@@ -130,7 +130,7 @@ func (ln lNode) updateBothSidesAction(newLeft string, newRight string, table str
 
 func (ln lNode) updateSideAction(side Side, newAddress string, table string) dynamodb.TransactWriteItem {
 	updater := newExpresionBuilder()
-	updater.conditionEquality(ln.prevAttr(side), StringValue{ln.prev(side)})
+	updater.addConditionEquality(ln.prevAttr(side), StringValue{ln.prev(side)})
 	updater.updateSET(ln.prevAttr(side), StringValue{newAddress})
 
 	return dynamodb.TransactWriteItem{
@@ -386,8 +386,8 @@ func (c Client) lPushActions(key string, element string, side Side, flags Flags)
 func (c Client) lFindEnd(key string, side Side) (node lNode, found bool, err error) {
 	node.key = key
 	queryCondition := newExpresionBuilder()
-	queryCondition.conditionEquality(pk, StringValue{node.key})
-	queryCondition.conditionEquality(node.prevAttr(side), StringValue{NULL})
+	queryCondition.addConditionEquality(pk, StringValue{node.key})
+	queryCondition.addConditionEquality(node.prevAttr(side), StringValue{NULL})
 
 	resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 		ConsistentRead:            aws.Bool(true),
@@ -447,7 +447,7 @@ func (c Client) LRANGE(key string, start, stop int64) (elements []string, err er
 	nodeMap := make(map[string]lNode)
 	// The most common case is a full fetch, so let's start with that for now.
 	queryCondition := newExpresionBuilder()
-	queryCondition.conditionEquality(pk, StringValue{key})
+	queryCondition.addConditionEquality(pk, StringValue{key})
 
 	hasMoreResults := true
 
