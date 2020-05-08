@@ -162,6 +162,15 @@ func (ln listNode) putAction(table string) dynamodb.TransactWriteItem {
 	}
 }
 
+func (ln listNode) deleteAction(table string) dynamodb.TransactWriteItem {
+	return dynamodb.TransactWriteItem{
+		Delete: &dynamodb.Delete{
+			Key:       ln.keyAV(),
+			TableName: aws.String(table),
+		},
+	}
+}
+
 func parseListNode(avm map[string]dynamodb.AttributeValue) (ln listNode) {
 	ln.key = aws.StringValue(avm[pk].S)
 	ln.address = aws.StringValue(avm[sk].S)
@@ -211,7 +220,7 @@ func (c Client) listNodeAtIndex(key string, index int64) (node listNode, found b
 func (c Client) LINSERT(key string, side Side, pivot, element string) (newLength int64, done bool, err error) {
 	var actions []dynamodb.TransactWriteItem
 
-	pivotNode, found, err := c.listNodeAtPivot(key, pivot)
+	pivotNode, found, err := c.listNodeAtPivot(key, pivot, Left)
 	if err != nil || !found {
 		return newLength, false, err
 	}
@@ -249,8 +258,8 @@ func (c Client) LINSERT(key string, side Side, pivot, element string) (newLength
 	return newLength, true, err
 }
 
-func (c Client) listNodeAtPivot(key string, pivot string) (node listNode, found bool, err error) {
-	node, found, err = c.listEnd(key, Left)
+func (c Client) listNodeAtPivot(key string, pivot string, side Side) (node listNode, found bool, err error) {
+	node, found, err = c.listEnd(key, side)
 	for found {
 		if err != nil {
 			return
@@ -260,7 +269,7 @@ func (c Client) listNodeAtPivot(key string, pivot string) (node listNode, found 
 			return node, true, nil
 		}
 
-		node, found, err = c.listGet(key, node.next(Left))
+		node, found, err = c.listGet(key, node.next(side))
 	}
 
 	return node, false, nil
@@ -538,8 +547,46 @@ func (c Client) LRANGE(key string, start, stop int64) (elements []string, err er
 }
 
 // LREM removes the first occurrence on the given side of the given element.
-func (c Client) LREM(key string, side Side, element string) (ok bool, err error) {
-	return
+func (c Client) LREM(key string, side Side, element string) (newLength int64, done bool, err error) {
+	var actions []dynamodb.TransactWriteItem
+
+	outgoingNode, found, err := c.listNodeAtPivot(key, element, side)
+	if err != nil || !found {
+		return newLength, false, err
+	}
+
+	switch {
+	case outgoingNode.isHead():
+		_, done, err = c.LPOP(key)
+	case outgoingNode.isTail():
+		_, done, err = c.RPOP(key)
+	default:
+		leftKeyNode := listNode{
+			key:     key,
+			address: outgoingNode.left,
+			right:   outgoingNode.address,
+		}
+		rightKeyNode := listNode{
+			key:     key,
+			address: outgoingNode.right,
+			left:    outgoingNode.address,
+		}
+
+		actions = append(actions, leftKeyNode.updateSideAction(Right, rightKeyNode.address, c.table))
+		actions = append(actions, rightKeyNode.updateSideAction(Left, leftKeyNode.address, c.table))
+		actions = append(actions, outgoingNode.deleteAction(c.table))
+	}
+
+	if len(actions) > 0 {
+		_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
+			TransactItems: actions,
+		}).Send(context.TODO())
+		if err == nil {
+			done = true
+		}
+	}
+
+	return newLength, done, err
 }
 
 func (c Client) LSET(key string, index int64, element string) (ok bool, err error) {

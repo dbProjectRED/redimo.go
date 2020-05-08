@@ -281,4 +281,51 @@ func TestListValueBasedCRUD(t *testing.T) {
 	elements, err = c.LRANGE("l1", 0, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"alpha", "beta", "gamma", "delta", "phi", "omega"}, elements)
+
+	_, ok, err = c.LREM("l1", Left, "gamma")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+
+	elements, err = c.LRANGE("l1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"alpha", "beta", "delta", "phi", "omega"}, elements)
+
+	_, ok, err = c.LREM("l1", Left, "omega")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+
+	elements, err = c.LRANGE("l1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"alpha", "beta", "delta", "phi"}, elements)
+
+	_, ok, err = c.LREM("l1", Left, "alpha")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+
+	elements, err = c.LRANGE("l1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"beta", "delta", "phi"}, elements)
+
+	_, err = c.RPUSH("l1", "delta", "gamma", "delta", "mu")
+	assert.NoError(t, err)
+
+	elements, err = c.LRANGE("l1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"beta", "delta", "phi", "delta", "gamma", "delta", "mu"}, elements)
+
+	_, ok, err = c.LREM("l1", Left, "delta")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+
+	elements, err = c.LRANGE("l1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"beta", "phi", "delta", "gamma", "delta", "mu"}, elements)
+
+	_, ok, err = c.LREM("l1", Right, "delta")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+
+	elements, err = c.LRANGE("l1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"beta", "phi", "delta", "gamma", "mu"}, elements)
 }
