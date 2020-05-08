@@ -179,7 +179,7 @@ func TestRPOPLPUSH(t *testing.T) {
 	assert.Equal(t, []string{"two"}, elements)
 }
 
-func TestListIndexTraversal(t *testing.T) {
+func TestListIndexBasedCRUD(t *testing.T) {
 	c := newClient(t)
 
 	_, err := c.RPUSH("l1", "inty", "minty", "papa", "tinty")
@@ -246,4 +246,39 @@ func TestListIndexTraversal(t *testing.T) {
 	elements, err := c.LRANGE("l1", 0, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"inty", "monty", "mama", "tinty"}, elements)
+}
+
+func TestListValueBasedCRUD(t *testing.T) {
+	c := newClient(t)
+
+	_, err := c.RPUSH("l1", "beta", "delta", "phi")
+	assert.NoError(t, err)
+
+	elements, err := c.LRANGE("l1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"beta", "delta", "phi"}, elements)
+
+	_, ok, err := c.LINSERT("l1", Left, "delta", "gamma")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+
+	elements, err = c.LRANGE("l1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"beta", "gamma", "delta", "phi"}, elements)
+
+	_, ok, err = c.LINSERT("l1", Left, "beta", "alpha")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+
+	elements, err = c.LRANGE("l1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"alpha", "beta", "gamma", "delta", "phi"}, elements)
+
+	_, ok, err = c.LINSERT("l1", Right, "phi", "omega")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+
+	elements, err = c.LRANGE("l1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"alpha", "beta", "gamma", "delta", "phi", "omega"}, elements)
 }

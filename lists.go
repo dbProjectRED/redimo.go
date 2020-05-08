@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -11,6 +12,17 @@ import (
 )
 
 type Side string
+
+func (s Side) otherSide() (otherSide Side) {
+	switch s {
+	case Left:
+		otherSide = Right
+	case Right:
+		otherSide = Left
+	}
+
+	return
+}
 
 const (
 	Left  Side = "LEFT"
@@ -116,7 +128,7 @@ func (ln listNode) updateBothSidesAction(newLeft string, newRight string, table 
 	}
 }
 
-func (ln listNode) updateSide(side Side, newAddress string, table string) dynamodb.TransactWriteItem {
+func (ln listNode) updateSideAction(side Side, newAddress string, table string) dynamodb.TransactWriteItem {
 	updater := newExpresionBuilder()
 	updater.conditionEquality(ln.prevAttr(side), StringValue{ln.prev(side)})
 	updater.updateSET(ln.prevAttr(side), StringValue{newAddress})
@@ -129,6 +141,23 @@ func (ln listNode) updateSide(side Side, newAddress string, table string) dynamo
 			Key:                       ln.keyAV(),
 			TableName:                 aws.String(table),
 			UpdateExpression:          updater.updateExpression(),
+		},
+	}
+}
+
+func (ln listNode) isTail() bool {
+	return ln.right == NULL
+}
+
+func (ln listNode) isHead() bool {
+	return ln.left == NULL
+}
+
+func (ln listNode) putAction(table string) dynamodb.TransactWriteItem {
+	return dynamodb.TransactWriteItem{
+		Put: &dynamodb.Put{
+			Item:      ln.toAV(),
+			TableName: aws.String(table),
 		},
 	}
 }
@@ -179,12 +208,62 @@ func (c Client) listNodeAtIndex(key string, index int64) (node listNode, found b
 }
 
 // LINSERT inserts the given element on the given side of the pivot element.
-func (c Client) LINSERT(key string, side Side, pivot, element string) (newLength int64, err error) {
-	return
+func (c Client) LINSERT(key string, side Side, pivot, element string) (newLength int64, done bool, err error) {
+	var actions []dynamodb.TransactWriteItem
+
+	pivotNode, found, err := c.listNodeAtPivot(key, pivot)
+	if err != nil || !found {
+		return newLength, false, err
+	}
+
+	switch {
+	case pivotNode.isHead() && side == Left:
+		_, err = c.LPUSHX(key, element)
+	case pivotNode.isTail() && side == Right:
+		_, err = c.RPUSHX(key, element)
+	default:
+		otherNode, ok, err := c.listGet(key, pivotNode.prev(side))
+		if err != nil || !ok {
+			return newLength, false, fmt.Errorf("could not find or load required node %v: %w", pivotNode, err)
+		}
+
+		newNode := listNode{
+			key:     key,
+			address: ulid.MustNew(ulid.Now(), rand.Reader).String(),
+			value:   element,
+		}
+		newNode.setPrev(side, otherNode.address)
+		newNode.setNext(side, pivotNode.address)
+
+		actions = append(actions, otherNode.updateSideAction(side.otherSide(), newNode.address, c.table))
+		actions = append(actions, pivotNode.updateSideAction(side, newNode.address, c.table))
+		actions = append(actions, newNode.putAction(c.table))
+	}
+
+	if len(actions) > 0 {
+		_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
+			TransactItems: actions,
+		}).Send(context.TODO())
+	}
+
+	return newLength, true, err
 }
 
-func (c Client) LINSERTBYINDEX(key string, side Side, index int64, element string) (newLength int64, err error) {
-	return
+func (c Client) listNodeAtPivot(key string, pivot string) (node listNode, found bool, err error) {
+	node, found, err = c.listEnd(key, Left)
+	for found {
+		if err != nil {
+			return
+		}
+
+		if node.value == pivot {
+			return node, true, nil
+		}
+
+		node, found, err = c.listGet(key, node.next(Left))
+	}
+
+	return node, false, nil
 }
 
 func (c Client) LLEN(key string) (length int64, err error) {
@@ -463,10 +542,6 @@ func (c Client) LREM(key string, side Side, element string) (ok bool, err error)
 	return
 }
 
-func (c Client) LREMBYINDEX(key string, index int64) (ok bool, err error) {
-	return
-}
-
 func (c Client) LSET(key string, index int64, element string) (ok bool, err error) {
 	node, found, err := c.listNodeAtIndex(key, index)
 	if err != nil || !found {
@@ -572,9 +647,9 @@ func (c Client) listRotate(key string) (element string, ok bool, err error) {
 			return element, ok, errors.New("concurrent modification")
 		}
 
-		actions = append(actions, leftEnd.updateSide(Left, rightEnd.address, c.table))
+		actions = append(actions, leftEnd.updateSideAction(Left, rightEnd.address, c.table))
 		actions = append(actions, rightEnd.updateBothSidesAction(NULL, leftEnd.address, c.table))
-		actions = append(actions, penultimateRight.updateSide(Right, NULL, c.table))
+		actions = append(actions, penultimateRight.updateSideAction(Right, NULL, c.table))
 		element = rightEnd.value
 	}
 
