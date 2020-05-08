@@ -40,14 +40,14 @@ var accumulators = map[Aggregation]func(float64, float64) float64{
 func (c Client) ZADD(key string, membersWithScores map[string]float64, flags Flags) (savedCount int64, err error) {
 	for member, score := range membersWithScores {
 		builder := newExpresionBuilder()
-		builder.SET(fmt.Sprintf("#%v = :%v", sk2, sk2), sk2, StringValue{floatToLex(big.NewFloat(score))}.toAV())
+		builder.updateSET(sk2, StringValue{floatToLex(big.NewFloat(score))})
 
 		if flags.has(IfNotExists) {
-			builder.condition(fmt.Sprintf("attribute_not_exists(#%v)", pk), pk)
+			builder.addConditionNotExists(pk)
 		}
 
 		if flags.has(IfAlreadyExists) {
-			builder.condition(fmt.Sprintf("attribute_exists(#%v)", pk), pk)
+			builder.addConditionExists(pk)
 		}
 
 		_, err = c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{

@@ -2,7 +2,6 @@ package redimo
 
 import (
 	"context"
-	"fmt"
 	"math/big"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -27,14 +26,14 @@ func (c Client) GET(key string) (val Value, err error) {
 func (c Client) SET(key string, value Value, flags Flags) (ok bool, err error) {
 	builder := newExpresionBuilder()
 
-	builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, value.toAV())
+	builder.updateSET(vk, value)
 
 	if flags.has(IfNotExists) {
-		builder.condition(fmt.Sprintf("attribute_not_exists(#%v)", pk), pk)
+		builder.addConditionNotExists(pk)
 	}
 
 	if flags.has(IfAlreadyExists) {
-		builder.condition(fmt.Sprintf("attribute_exists(#%v)", pk), pk)
+		builder.addConditionExists(pk)
 	}
 
 	_, err = c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
@@ -65,7 +64,7 @@ func (c Client) SETNX(key string, value Value) (ok bool, err error) {
 
 func (c Client) GETSET(key string, value Value) (oldValue Value, err error) {
 	builder := newExpresionBuilder()
-	builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, value.toAV())
+	builder.updateSET(vk, value)
 
 	resp, err := c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
 		ConditionExpression:       builder.conditionExpression(),
@@ -141,10 +140,10 @@ func (c Client) _mset(data map[string]Value, flags Flags) (ok bool, err error) {
 		builder := newExpresionBuilder()
 
 		if flags.has(IfNotExists) {
-			builder.condition(fmt.Sprintf("(attribute_not_exists(#%v))", pk), pk)
+			builder.addConditionNotExists(pk)
 		}
 
-		builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, v.toAV())
+		builder.updateSET(vk, v)
 
 		inputs = append(inputs, dynamodb.TransactWriteItem{
 			Update: &dynamodb.Update{

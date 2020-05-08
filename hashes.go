@@ -327,8 +327,8 @@ func (c Client) HLEN(key string) (count int64, err error) {
 
 func (c Client) HSETNX(key string, field string, value Value) (ok bool, err error) {
 	builder := newExpresionBuilder()
-	builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, value.toAV())
-	builder.condition(fmt.Sprintf("(attribute_not_exists(#%v))", pk), pk)
+	builder.updateSET(vk, value)
+	builder.addConditionNotExists(pk)
 
 	_, err = c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
 		ConditionExpression:       builder.conditionExpression(),
