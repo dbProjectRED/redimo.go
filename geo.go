@@ -40,10 +40,6 @@ func (l *Location) setCellIDString(cellIDStr string) {
 	l.Lon = s2LatLon.Lng.Degrees()
 }
 
-func (l Location) S2Cell() s2.Cell {
-	return s2.CellFromLatLng(l.S2LatLng())
-}
-
 func (l Location) DistanceTo(l2 Location, unit Unit) float64 {
 	return Meters.To(unit, l.S2LatLng().Distance(l2.S2LatLng()).Radians()*EarthRadiusMeters)
 }
@@ -93,26 +89,30 @@ func (c Client) GEOADD(key string, members map[string]Location) (addedCount int6
 }
 
 func (c Client) GEODIST(key string, member1, member2 string, unit Unit) (distance float64, ok bool, err error) {
-	locations, ok, err := c.geoGet(key, member1, member2)
-	if err != nil || !ok {
+	locations, err := c.GEOPOS(key, member1, member2)
+	if err != nil || len(locations) < 2 {
 		return
 	}
 
-	return locations[0].DistanceTo(locations[1], unit), true, nil
+	return locations[member1].DistanceTo(locations[member2], unit), true, nil
 }
 
 func (c Client) GEOHASH(key string, members ...string) (geohashes []string, err error) {
-	locations, _, err := c.geoGet(key, members...)
+	locations, err := c.GEOPOS(key, members...)
 
-	for _, location := range locations {
-		geohashes = append(geohashes, location.Geohash())
+	for _, member := range members {
+		if location, found := locations[member]; found {
+			geohashes = append(geohashes, location.Geohash())
+		} else {
+			geohashes = append(geohashes, "")
+		}
 	}
 
 	return
 }
 
-func (c Client) geoGet(key string, members ...string) (locations []Location, ok bool, err error) {
-	ok = true
+func (c Client) GEOPOS(key string, members ...string) (locations map[string]Location, err error) {
+	locations = make(map[string]Location)
 
 	for _, member := range members {
 		resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
@@ -122,21 +122,14 @@ func (c Client) geoGet(key string, members ...string) (locations []Location, ok 
 		}).Send(context.TODO())
 
 		if err != nil {
-			return locations, false, err
+			return locations, err
 		}
 
 		if len(resp.Item) > 0 {
-			locations = append(locations, FromCellIDString(aws.StringValue(resp.Item[skGeoCell].N)))
-		} else {
-			ok = false
-			locations = append(locations, Location{})
+			locations[member] = FromCellIDString(aws.StringValue(resp.Item[skGeoCell].N))
 		}
 	}
 
-	return
-}
-
-func (c Client) GEOPOS(key string, members ...string) (positions map[string]Location, err error) {
 	return
 }
 

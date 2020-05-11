@@ -21,10 +21,11 @@ func TestPointsAndDistances(t *testing.T) {
 
 func TestGeoBasics(t *testing.T) {
 	c := newClient(t)
-	_, err := c.GEOADD("Sicily", map[string]Location{
+	startingMap := map[string]Location{
 		"Palermo": {38.115556, 13.361389},
 		"Catania": {37.502669, 15.087269},
-	})
+	}
+	_, err := c.GEOADD("Sicily", startingMap)
 	assert.NoError(t, err)
 
 	count, err := c.ZCARD("Sicily")
@@ -53,4 +54,9 @@ func TestGeoBasics(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, ok)
 	assert.InDelta(t, 103.3182, distance, 0.01)
+
+	positions, err := c.GEOPOS("Sicily", "Palermo", "Catania")
+	assert.NoError(t, err)
+	assert.InDelta(t, startingMap["Palermo"].Lat, positions["Palermo"].Lat, 0.1)
+	assert.InDelta(t, startingMap["Catania"].Lon, positions["Catania"].Lon, 0.1)
 }
