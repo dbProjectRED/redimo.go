@@ -33,15 +33,17 @@ func (c Client) getIndex(attribute string) *string {
 }
 
 const (
-	pk      = "pk"
-	sk      = "sk"
-	sk2     = "sk2"
-	sk3     = "sk3"
-	sk4     = "sk4"
-	vk      = "val"
-	emptySK = "/"
-	skLeft  = sk3
-	skRight = sk4
+	pk        = "pk"
+	sk        = "sk"
+	sk2       = "sk2"
+	sk3       = "sk3"
+	sk4       = "sk4"
+	vk        = "val"
+	emptySK   = "/"
+	skLeft    = sk3
+	skRight   = sk4
+	skN1      = "skN1"
+	skGeoCell = skN1
 )
 
 type expressionBuilder struct {
@@ -122,6 +124,10 @@ func (b *expressionBuilder) addConditionEquality(attributeName string, value Val
 
 func (b *expressionBuilder) updateSET(attributeName string, value Value) {
 	b.SET(fmt.Sprintf("#%v = :%v", attributeName, attributeName), attributeName, value.toAV())
+}
+
+func (b *expressionBuilder) updateSetAV(attributeName string, av dynamodb.AttributeValue) {
+	b.SET(fmt.Sprintf("#%v = :%v", attributeName, attributeName), attributeName, av)
 }
 
 func (b *expressionBuilder) addConditionNotExists(attributeName string) {
