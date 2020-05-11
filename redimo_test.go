@@ -98,9 +98,10 @@ func newClient(t *testing.T) Client {
 		consistentReads: true,
 		table:           name,
 		indexes: map[string]string{
-			sk2: "lsi_sk2",
-			sk3: "lsi_sk3",
-			sk4: "lsi_sk4",
+			sk2:  "lsi_sk2",
+			sk3:  "lsi_sk3",
+			sk4:  "lsi_sk4",
+			skN1: "lsi_skN1",
 		},
 	}
 }

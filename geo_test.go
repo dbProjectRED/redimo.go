@@ -60,3 +60,27 @@ func TestGeoBasics(t *testing.T) {
 	assert.InDelta(t, startingMap["Palermo"].Lat, positions["Palermo"].Lat, 0.1)
 	assert.InDelta(t, startingMap["Catania"].Lon, positions["Catania"].Lon, 0.1)
 }
+
+func TestGeoRadius(t *testing.T) {
+	c := newClient(t)
+	_, err := c.GEOADD("india", map[string]Location{
+		"chennai":    {13.09, 80.28},
+		"vellore":    {12.9204, 79.15},
+		"pondy":      {11.935, 79.83},
+		"bangalore":  {12.97, 77.56},
+		"coimbatore": {11, 76.95},
+		"madurai":    {9.939093, 78.121719},
+	})
+	assert.NoError(t, err)
+
+	locations, err := c.GEORADIUS("india", Location{13.09, 80.28}, 180, Kilometers, 10)
+	assert.NoError(t, err)
+	assert.Equal(t, 3, len(locations))
+	assert.InDelta(t, locations["chennai"].Lat, 13.09, 0.1)
+	assert.InDelta(t, locations["pondy"].Lon, 79.83, 0.1)
+	assert.InDelta(t, locations["vellore"].Lat, 12.9204, 0.1)
+
+	locations2, err := c.GEORADIUSBYMEMBER("india", "chennai", 180, Kilometers, 10)
+	assert.NoError(t, err)
+	assert.Equal(t, locations, locations2)
+}

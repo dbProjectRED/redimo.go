@@ -7,6 +7,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/golang/geo/s1"
 	"github.com/golang/geo/s2"
 	"github.com/mmcloughlin/geohash"
 )
@@ -133,10 +134,62 @@ func (c Client) GEOPOS(key string, members ...string) (locations map[string]Loca
 	return
 }
 
-func (c Client) GEORADIUS(key string, location Location, radius float64, radiusUnit Unit, count int64) (positions map[string]Location, err error) {
+func (c Client) GEORADIUS(key string, center Location, radius float64, radiusUnit Unit, count int64) (positions map[string]Location, err error) {
+	positions = make(map[string]Location)
+	radiusCap := s2.CapFromCenterAngle(s2.PointFromLatLng(center.s2LatLng()), s1.Angle(radiusUnit.To(Meters, radius)/EarthRadiusMeters))
+
+	for _, cellID := range radiusCap.CellUnionBound() {
+		builder := newExpresionBuilder()
+		builder.addConditionEquality(pk, StringValue{key})
+		builder.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", skGeoCell), skGeoCell)
+		builder.values["start"] = dynamodb.AttributeValue{N: aws.String(fmt.Sprintf("%d", cellID.RangeMin()))}
+		builder.values["stop"] = dynamodb.AttributeValue{N: aws.String(fmt.Sprintf("%d", cellID.RangeMax()))}
+
+		var cursor map[string]dynamodb.AttributeValue
+
+		hasMoreResults := true
+
+		for hasMoreResults && count > 0 {
+			resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
+				ConsistentRead:            aws.Bool(c.consistentReads),
+				ExclusiveStartKey:         cursor,
+				ExpressionAttributeNames:  builder.expressionAttributeNames(),
+				ExpressionAttributeValues: builder.expressionAttributeValues(),
+				IndexName:                 c.getIndex(skGeoCell),
+				KeyConditionExpression:    builder.conditionExpression(),
+				Limit:                     aws.Int64(count),
+				TableName:                 aws.String(c.table),
+			}).Send(context.TODO())
+			if err != nil {
+				return positions, err
+			}
+
+			if len(resp.LastEvaluatedKey) > 0 {
+				cursor = resp.LastEvaluatedKey
+			} else {
+				hasMoreResults = false
+			}
+
+			for _, item := range resp.Items {
+				location := fromCellIDString(aws.StringValue(item[skGeoCell].N))
+				member := aws.StringValue(item[sk].S)
+
+				if center.DistanceTo(location, radiusUnit) <= radius {
+					positions[member] = location
+					count--
+				}
+			}
+		}
+	}
+
 	return
 }
 
 func (c Client) GEORADIUSBYMEMBER(key string, member string, radius float64, radiusUnit Unit, count int64) (positions map[string]Location, err error) {
+	locations, err := c.GEOPOS(key, member)
+	if err == nil {
+		positions, err = c.GEORADIUS(key, locations[member], radius, radiusUnit, count)
+	}
+
 	return
 }

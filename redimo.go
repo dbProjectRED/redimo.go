@@ -148,11 +148,12 @@ func newExpresionBuilder() expressionBuilder {
 }
 
 type keyDef struct {
-	pk  string
-	sk  string
-	sk2 string
-	sk3 string
-	sk4 string
+	pk   string
+	sk   string
+	sk2  string
+	sk3  string
+	sk4  string
+	skN1 string
 }
 
 func (k keyDef) toAV() map[string]dynamodb.AttributeValue {
@@ -179,6 +180,12 @@ func (k keyDef) toAV() map[string]dynamodb.AttributeValue {
 	if k.sk4 != "" {
 		m[sk4] = dynamodb.AttributeValue{
 			S: aws.String(k.sk4),
+		}
+	}
+
+	if k.skN1 != "" {
+		m[skN1] = dynamodb.AttributeValue{
+			N: aws.String(k.skN1),
 		}
 	}
 
