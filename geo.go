@@ -11,13 +11,15 @@ import (
 	"github.com/mmcloughlin/geohash"
 )
 
+const EarthRadiusMeters = 6372797.560856
+
 type Location struct {
 	Lat float64
 	Lon float64
 }
 
 func (l Location) S2CellID() string {
-	return fmt.Sprintf("%d", s2.CellIDFromLatLng(s2.LatLngFromDegrees(l.Lat, l.Lon)))
+	return fmt.Sprintf("%d", s2.CellIDFromLatLng(l.S2LatLng()))
 }
 
 func (l Location) Geohash() string {
@@ -38,6 +40,18 @@ func (l *Location) setCellIDString(cellIDStr string) {
 	l.Lon = s2LatLon.Lng.Degrees()
 }
 
+func (l Location) S2Cell() s2.Cell {
+	return s2.CellFromLatLng(l.S2LatLng())
+}
+
+func (l Location) DistanceTo(l2 Location, unit Unit) float64 {
+	return Meters.To(unit, l.S2LatLng().Distance(l2.S2LatLng()).Radians()*EarthRadiusMeters)
+}
+
+func (l Location) S2LatLng() s2.LatLng {
+	return s2.LatLngFromDegrees(l.Lat, l.Lon)
+}
+
 func FromCellIDString(cellID string) (l Location) {
 	l.setCellIDString(cellID)
 	return
@@ -45,10 +59,14 @@ func FromCellIDString(cellID string) (l Location) {
 
 type Unit float64
 
+func (from Unit) To(to Unit, d float64) float64 {
+	return (d / float64(to)) * float64(from)
+}
+
 const (
 	Meters     Unit = 1.0
 	Kilometers Unit = 1000.0
-	Miles      Unit = 1.0 / 0.00062137
+	Miles      Unit = 1609.34
 	Feet       Unit = 0.3048
 )
 
@@ -75,22 +93,44 @@ func (c Client) GEOADD(key string, members map[string]Location) (addedCount int6
 }
 
 func (c Client) GEODIST(key string, member1, member2 string, unit Unit) (distance float64, ok bool, err error) {
-	return
+	locations, ok, err := c.geoGet(key, member1, member2)
+	if err != nil || !ok {
+		return
+	}
+
+	return locations[0].DistanceTo(locations[1], unit), true, nil
 }
 
 func (c Client) GEOHASH(key string, members ...string) (geohashes []string, err error) {
+	locations, _, err := c.geoGet(key, members...)
+
+	for _, location := range locations {
+		geohashes = append(geohashes, location.Geohash())
+	}
+
+	return
+}
+
+func (c Client) geoGet(key string, members ...string) (locations []Location, ok bool, err error) {
+	ok = true
+
 	for _, member := range members {
 		resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
 			ConsistentRead: aws.Bool(c.consistentReads),
 			Key:            keyDef{pk: key, sk: member}.toAV(),
 			TableName:      aws.String(c.table),
 		}).Send(context.TODO())
+
 		if err != nil {
-			return geohashes, err
+			return locations, false, err
 		}
 
-		location := FromCellIDString(aws.StringValue(resp.Item[skGeoCell].N))
-		geohashes = append(geohashes, location.Geohash())
+		if len(resp.Item) > 0 {
+			locations = append(locations, FromCellIDString(aws.StringValue(resp.Item[skGeoCell].N)))
+		} else {
+			ok = false
+			locations = append(locations, Location{})
+		}
 	}
 
 	return

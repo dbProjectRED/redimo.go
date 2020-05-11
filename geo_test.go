@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestLatLonEncoding(t *testing.T) {
+func TestPointsAndDistances(t *testing.T) {
 	l := Location{
 		Lat: 38.115556,
 		Lon: 13.361389,
@@ -15,6 +15,8 @@ func TestLatLonEncoding(t *testing.T) {
 	assert.Equal(t, "1376383545825912065", l.S2CellID())
 	assert.Equal(t, "sqc8b49rnyte", l.Geohash())
 	assert.Equal(t, "1376383545825912065", aws.StringValue(l.ToAV().N))
+
+	assert.InDelta(t, 32.8084, Meters.To(Feet, 10), 0.01)
 }
 
 func TestGeoBasics(t *testing.T) {
@@ -36,4 +38,19 @@ func TestGeoBasics(t *testing.T) {
 	geohashes, err = c.GEOHASH("Sicily", "Palermo", "Catania")
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"sqc8b49rnyte", "sqdtr74hyu5n"}, geohashes)
+
+	distance, ok, err := c.GEODIST("Sicily", "Palermo", "Catania", Meters)
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.InDelta(t, 166274.1516, distance, 1)
+
+	distance, ok, err = c.GEODIST("Sicily", "Catania", "Palermo", Kilometers)
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.InDelta(t, 166.2742, distance, 0.01)
+
+	distance, ok, err = c.GEODIST("Sicily", "Catania", "Palermo", Miles)
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.InDelta(t, 103.3182, distance, 0.01)
 }
