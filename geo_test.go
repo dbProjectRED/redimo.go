@@ -12,9 +12,9 @@ func TestPointsAndDistances(t *testing.T) {
 		Lat: 38.115556,
 		Lon: 13.361389,
 	}
-	assert.Equal(t, "1376383545825912065", l.S2CellID())
+	assert.Equal(t, "1376383545825912065", l.s2CellID())
 	assert.Equal(t, "sqc8b49rnyte", l.Geohash())
-	assert.Equal(t, "1376383545825912065", aws.StringValue(l.ToAV().N))
+	assert.Equal(t, "1376383545825912065", aws.StringValue(l.toAV().N))
 
 	assert.InDelta(t, 32.8084, Meters.To(Feet, 10), 0.01)
 }

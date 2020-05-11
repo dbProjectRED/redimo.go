@@ -18,17 +18,17 @@ type Location struct {
 	Lon float64
 }
 
-func (l Location) S2CellID() string {
-	return fmt.Sprintf("%d", s2.CellIDFromLatLng(l.S2LatLng()))
+func (l Location) s2CellID() string {
+	return fmt.Sprintf("%d", s2.CellIDFromLatLng(l.s2LatLng()))
 }
 
 func (l Location) Geohash() string {
 	return geohash.Encode(l.Lat, l.Lon)
 }
 
-func (l Location) ToAV() dynamodb.AttributeValue {
+func (l Location) toAV() dynamodb.AttributeValue {
 	return dynamodb.AttributeValue{
-		N: aws.String(l.S2CellID()),
+		N: aws.String(l.s2CellID()),
 	}
 }
 
@@ -40,15 +40,15 @@ func (l *Location) setCellIDString(cellIDStr string) {
 	l.Lon = s2LatLon.Lng.Degrees()
 }
 
-func (l Location) DistanceTo(l2 Location, unit Unit) float64 {
-	return Meters.To(unit, l.S2LatLng().Distance(l2.S2LatLng()).Radians()*EarthRadiusMeters)
+func (l Location) DistanceTo(other Location, unit Unit) float64 {
+	return Meters.To(unit, l.s2LatLng().Distance(other.s2LatLng()).Radians()*EarthRadiusMeters)
 }
 
-func (l Location) S2LatLng() s2.LatLng {
+func (l Location) s2LatLng() s2.LatLng {
 	return s2.LatLngFromDegrees(l.Lat, l.Lon)
 }
 
-func FromCellIDString(cellID string) (l Location) {
+func fromCellIDString(cellID string) (l Location) {
 	l.setCellIDString(cellID)
 	return
 }
@@ -69,7 +69,7 @@ const (
 func (c Client) GEOADD(key string, members map[string]Location) (addedCount int64, err error) {
 	for member, location := range members {
 		builder := newExpresionBuilder()
-		builder.updateSetAV(skGeoCell, location.ToAV())
+		builder.updateSetAV(skGeoCell, location.toAV())
 
 		_, err = c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
 			ConditionExpression:       builder.conditionExpression(),
@@ -126,7 +126,7 @@ func (c Client) GEOPOS(key string, members ...string) (locations map[string]Loca
 		}
 
 		if len(resp.Item) > 0 {
-			locations[member] = FromCellIDString(aws.StringValue(resp.Item[skGeoCell].N))
+			locations[member] = fromCellIDString(aws.StringValue(resp.Item[skGeoCell].N))
 		}
 	}
 
