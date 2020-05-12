@@ -166,7 +166,24 @@ func (c Client) xInitAction(key string) dynamodb.TransactWriteItem {
 
 func (c Client) XCLAIM(key string) (err error) { return }
 
-func (c Client) XDEL(key string) (err error) { return }
+func (c Client) XDEL(key string, ids ...XID) (count int64, err error) {
+	for _, id := range ids {
+		resp, err := c.ddbClient.DeleteItemRequest(&dynamodb.DeleteItemInput{
+			Key:          keyDef{pk: key, sk: id.String()}.toAV(),
+			ReturnValues: dynamodb.ReturnValueAllOld,
+			TableName:    aws.String(c.table),
+		}).Send(context.TODO())
+		if err != nil {
+			return count, err
+		}
+
+		if len(resp.Attributes) > 0 {
+			count++
+		}
+	}
+
+	return
+}
 
 func (c Client) XGROUP(key string) (err error) { return }
 
@@ -213,6 +230,10 @@ func (c Client) XLEN(key string, start, stop XID) (count int64, err error) {
 func (c Client) XPENDING(key string) (err error) { return }
 
 func (c Client) XRANGE(key string, start, stop XID, count int64) (streamItems []StreamItem, err error) {
+	return c.xRange(key, start, stop, count, true)
+}
+
+func (c Client) xRange(key string, start, stop XID, count int64, forward bool) (streamItems []StreamItem, err error) {
 	hasMoreResults := true
 
 	var cursor map[string]dynamodb.AttributeValue
@@ -230,7 +251,7 @@ func (c Client) XRANGE(key string, start, stop XID, count int64) (streamItems []
 			ExpressionAttributeValues: builder.expressionAttributeValues(),
 			KeyConditionExpression:    builder.conditionExpression(),
 			Limit:                     aws.Int64(count),
-			ScanIndexForward:          aws.Bool(true),
+			ScanIndexForward:          aws.Bool(forward),
 			TableName:                 aws.String(c.table),
 		}).Send(context.TODO())
 
@@ -270,6 +291,55 @@ func (c Client) XREAD(key string, from XID, count int64) (items []StreamItem, er
 
 func (c Client) XREADGROUP(key string) (err error) { return }
 
-func (c Client) XREVRANGE(key string) (err error) { return }
+func (c Client) XREVRANGE(key string, end, start XID, count int64) (streamItems []StreamItem, err error) {
+	return c.xRange(key, start, end, count, false)
+}
 
-func (c Client) XTRIM(key string) (err error) { return }
+func (c Client) XTRIM(key string, until XID) (count int64, err error) {
+	hasMoreResults := true
+
+	var cursor map[string]dynamodb.AttributeValue
+
+	for hasMoreResults {
+		builder := newExpresionBuilder()
+		builder.addConditionEquality(pk, StringValue{key})
+		builder.condition(fmt.Sprintf("#%v < :until", sk), sk)
+		builder.values["until"] = StringValue{until.String()}.toAV()
+		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
+			ConsistentRead:            aws.Bool(c.consistentReads),
+			ExclusiveStartKey:         cursor,
+			ExpressionAttributeNames:  builder.expressionAttributeNames(),
+			ExpressionAttributeValues: builder.expressionAttributeValues(),
+			KeyConditionExpression:    builder.conditionExpression(),
+			ProjectionExpression:      aws.String(strings.Join([]string{pk, sk}, ",")),
+			ScanIndexForward:          aws.Bool(true),
+			TableName:                 aws.String(c.table),
+		}).Send(context.TODO())
+
+		if err != nil {
+			return count, err
+		}
+
+		if len(resp.LastEvaluatedKey) > 0 {
+			cursor = resp.LastEvaluatedKey
+		} else {
+			hasMoreResults = false
+		}
+
+		var sortKeys []string
+
+		for _, item := range resp.Items {
+			parsedItem := parseKey(item)
+			sortKeys = append(sortKeys, parsedItem.sk)
+		}
+
+		count += int64(len(sortKeys))
+		err = c.HDEL(key, sortKeys...)
+
+		if err != nil {
+			return count, err
+		}
+	}
+
+	return
+}
