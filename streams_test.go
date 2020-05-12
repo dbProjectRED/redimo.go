@@ -33,8 +33,12 @@ func TestStreamCRU(t *testing.T) {
 	items, err = c.XRANGE("x1", XStart, XEnd, 100)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(items))
+	assert.Equal(t, 2, len(items[0].Fields))
+	assert.Equal(t, 2, len(items[1].Fields))
 	assert.Equal(t, insertID1, items[0].ID)
+	assert.Equal(t, "v1", items[0].Fields["f1"])
 	assert.Equal(t, insertID2, items[1].ID)
+	assert.Equal(t, "v4", items[1].Fields["f4"])
 
 	items, err = c.XREAD("x1", XStart, 1)
 	assert.NoError(t, err)

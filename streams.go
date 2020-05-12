@@ -245,9 +245,17 @@ func (c Client) XRANGE(key string, start, stop XID, count int64) (streamItems []
 		}
 
 		for _, resultItem := range resp.Items {
+			fieldMap := make(map[string]string)
+
+			for k, v := range resultItem {
+				if strings.HasPrefix(k, "_") {
+					fieldMap[k[1:]] = aws.StringValue(v.S)
+				}
+			}
+
 			streamItems = append(streamItems, StreamItem{
 				ID:     XID(aws.StringValue(resultItem[sk].S)),
-				Fields: nil,
+				Fields: fieldMap,
 			})
 			count--
 		}
