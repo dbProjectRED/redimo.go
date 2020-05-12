@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,31 +12,31 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
-type StreamItemID string
+type XID string
 
 const (
-	StreamStart  StreamItemID = "00000000000000000000-00000000000000000000"
-	StreamEnd    StreamItemID = "18446744073709551615-18446744073709551615"
-	StreamAutoID StreamItemID = "*"
+	XStart  XID = "00000000000000000000-00000000000000000000"
+	XEnd    XID = "99999999999999999999-99999999999999999999"
+	XAutoID XID = "*"
 )
 
-func NewStreamID(ts time.Time, seq int64) StreamItemID {
+func NewXID(ts time.Time, seq uint64) XID {
 	timePart := fmt.Sprintf("%020d", ts.Unix())
 	sequencePart := fmt.Sprintf("%020d", seq)
 
-	return StreamItemID(strings.Join([]string{timePart, sequencePart}, "-"))
+	return XID(strings.Join([]string{timePart, sequencePart}, "-"))
 }
 
-func (sid StreamItemID) String() string {
-	return string(sid)
+func (xid XID) String() string {
+	return string(xid)
 }
 
 const sequenceSK = "_redimo/sequence"
 
-func (sid StreamItemID) sequenceUpdateAction(key string, table string) dynamodb.TransactWriteItem {
+func (xid XID) sequenceUpdateAction(key string, table string) dynamodb.TransactWriteItem {
 	builder := newExpresionBuilder()
 	builder.condition(fmt.Sprintf("#%v < :%v", vk, vk), vk)
-	builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, StringValue{sid.String()}.toAV())
+	builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, StringValue{xid.String()}.toAV())
 
 	return dynamodb.TransactWriteItem{
 		Update: &dynamodb.Update{
@@ -49,8 +50,26 @@ func (sid StreamItemID) sequenceUpdateAction(key string, table string) dynamodb.
 	}
 }
 
+func (xid XID) Next() XID {
+	return NewXID(xid.Time(), xid.Seq()+1)
+}
+
+func (xid XID) Time() time.Time {
+	parts := strings.Split(xid.String(), "-")
+	tsec, _ := strconv.ParseInt(parts[0], 10, 64)
+
+	return time.Unix(tsec, 0)
+}
+
+func (xid XID) Seq() uint64 {
+	parts := strings.Split(xid.String(), "-")
+	seq, _ := strconv.ParseUint(parts[1], 10, 64)
+
+	return seq
+}
+
 type StreamItem struct {
-	ID     StreamItemID
+	ID     XID
 	Fields map[string]string
 }
 
@@ -77,14 +96,14 @@ func (i StreamItem) toAV(key string) map[string]dynamodb.AttributeValue {
 
 func (c Client) XACK(key string) (err error) { return }
 
-func (c Client) XADD(key string, id StreamItemID, fields map[string]string) (returnedID StreamItemID, err error) {
+func (c Client) XADD(key string, id XID, fields map[string]string) (returnedID XID, err error) {
 	retry := true
 	retryCount := 0
 
 	for retry && retryCount < 2 {
 		var actions []dynamodb.TransactWriteItem
 
-		if id == StreamAutoID {
+		if id == XAutoID {
 			now := time.Now()
 			newSequence, err := c.HINCRBY(key, "_redimo/sequence/"+fmt.Sprintf("%020d", now.Unix()), big.NewInt(1))
 
@@ -92,7 +111,7 @@ func (c Client) XADD(key string, id StreamItemID, fields map[string]string) (ret
 				return id, err
 			}
 
-			id = NewStreamID(now, newSequence.Int64())
+			id = NewXID(now, newSequence.Uint64())
 		}
 
 		actions = append(actions, StreamItem{ID: id, Fields: fields}.putAction(key, c.table))
@@ -131,7 +150,7 @@ func (c Client) xInit(key string) (err error) {
 func (c Client) xInitAction(key string) dynamodb.TransactWriteItem {
 	builder := newExpresionBuilder()
 	builder.addConditionNotExists(vk)
-	builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, StringValue{StreamStart.String()}.toAV())
+	builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, StringValue{XStart.String()}.toAV())
 
 	return dynamodb.TransactWriteItem{
 		Update: &dynamodb.Update{
@@ -153,16 +172,52 @@ func (c Client) XGROUP(key string) (err error) { return }
 
 func (c Client) XINFO(key string) (err error) { return }
 
-func (c Client) XLEN(key string) (err error) { return }
-
-func (c Client) XPENDING(key string) (err error) { return }
-
-func (c Client) XRANGE(key string, start, stop StreamItemID, count int64) (streamItems []StreamItem, err error) {
+func (c Client) XLEN(key string, start, stop XID) (count int64, err error) {
 	hasMoreResults := true
 
 	var cursor map[string]dynamodb.AttributeValue
 
 	for hasMoreResults {
+		builder := newExpresionBuilder()
+		builder.addConditionEquality(pk, StringValue{key})
+		builder.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", sk), sk)
+		builder.values["start"] = dynamodb.AttributeValue{S: aws.String(start.String())}
+		builder.values["stop"] = dynamodb.AttributeValue{S: aws.String(stop.String())}
+		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
+			ConsistentRead:            aws.Bool(c.consistentReads),
+			ExclusiveStartKey:         cursor,
+			ExpressionAttributeNames:  builder.expressionAttributeNames(),
+			ExpressionAttributeValues: builder.expressionAttributeValues(),
+			KeyConditionExpression:    builder.conditionExpression(),
+			ScanIndexForward:          aws.Bool(true),
+			Select:                    dynamodb.SelectCount,
+			TableName:                 aws.String(c.table),
+		}).Send(context.TODO())
+
+		if err != nil {
+			return count, err
+		}
+
+		if len(resp.LastEvaluatedKey) > 0 {
+			cursor = resp.LastEvaluatedKey
+		} else {
+			hasMoreResults = false
+		}
+
+		count += aws.Int64Value(resp.Count)
+	}
+
+	return
+}
+
+func (c Client) XPENDING(key string) (err error) { return }
+
+func (c Client) XRANGE(key string, start, stop XID, count int64) (streamItems []StreamItem, err error) {
+	hasMoreResults := true
+
+	var cursor map[string]dynamodb.AttributeValue
+
+	for hasMoreResults && count > 0 {
 		builder := newExpresionBuilder()
 		builder.addConditionEquality(pk, StringValue{key})
 		builder.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", sk), sk)
@@ -191,7 +246,7 @@ func (c Client) XRANGE(key string, start, stop StreamItemID, count int64) (strea
 
 		for _, resultItem := range resp.Items {
 			streamItems = append(streamItems, StreamItem{
-				ID:     StreamItemID(aws.StringValue(resultItem[sk].S)),
+				ID:     XID(aws.StringValue(resultItem[sk].S)),
 				Fields: nil,
 			})
 			count--
@@ -201,7 +256,9 @@ func (c Client) XRANGE(key string, start, stop StreamItemID, count int64) (strea
 	return
 }
 
-func (c Client) XREAD(key string) (err error) { return }
+func (c Client) XREAD(key string, from XID, count int64) (items []StreamItem, err error) {
+	return c.XRANGE(key, from.Next(), XEnd, count)
+}
 
 func (c Client) XREADGROUP(key string) (err error) { return }
 
