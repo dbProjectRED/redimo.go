@@ -1,6 +1,8 @@
 package redimo
 
 import (
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -104,4 +106,69 @@ func TestStreamDeletes(t *testing.T) {
 	assert.Equal(t, 2, len(items))
 	assert.Equal(t, insertID4, items[0].ID)
 	assert.Equal(t, insertID5, items[1].ID)
+}
+
+func TestStreamsConsumerGroupsNoACK(t *testing.T) {
+	c := newClient(t)
+	allItems := make([]StreamItem, 0, 25)
+	key := "x1"
+	group := "group"
+
+	for i := 0; i < 30; i++ {
+		fields := map[string]string{"i": strconv.Itoa(i)}
+		insertedID, err := c.XADD(key, XAutoID, fields)
+
+		allItems = append(allItems, StreamItem{ID: insertedID, Fields: fields})
+
+		assert.NoError(t, err)
+	}
+
+	err := c.XGROUP(key, group, XStart)
+	assert.NoError(t, err)
+
+	consumer1 := "mercury"
+	consumer2 := "venus"
+	consumer3 := "earth"
+	item1, err := c.XREADGROUP(key, group, consumer1, true)
+	assert.NoError(t, err)
+	assert.Equal(t, allItems[0], item1)
+
+	item2, err := c.XREADGROUP(key, group, consumer2, true)
+	assert.NoError(t, err)
+	assert.Equal(t, allItems[1], item2)
+
+	item3, err := c.XREADGROUP(key, group, consumer3, true)
+	assert.NoError(t, err)
+	assert.Equal(t, allItems[2], item3)
+
+	collector := make(chan StreamItem)
+	wg := sync.WaitGroup{}
+
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+
+		go func() {
+			item, err := c.XREADGROUP(key, group, consumer1, true)
+			if err != nil {
+				assert.NoError(t, err)
+			} else {
+				collector <- item
+			}
+
+			wg.Add(-1)
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(collector)
+	}()
+
+	parallelItems := make([]StreamItem, 0, 5)
+
+	for item := range collector {
+		parallelItems = append(parallelItems, item)
+	}
+
+	assert.ElementsMatch(t, allItems[3:8], parallelItems)
 }

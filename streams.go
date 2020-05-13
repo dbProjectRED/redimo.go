@@ -10,9 +10,12 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/pkg/errors"
 )
 
 type XID string
+
+var ErrXGroupNotInitialized = errors.New("group not initialized")
 
 const (
 	XStart  XID = "00000000000000000000-00000000000000000000"
@@ -185,7 +188,38 @@ func (c Client) XDEL(key string, ids ...XID) (count int64, err error) {
 	return
 }
 
-func (c Client) XGROUP(key string) (err error) { return }
+func (c Client) XGROUP(key string, group string, start XID) (err error) {
+	err = c.xGroupCursorSet(key, group, start)
+	return
+}
+func (c Client) xGroupCursorSet(key string, group string, start XID) error {
+	cursorKey := c.xGroupCursorKey(key, group)
+	_, err := c.HSET(cursorKey.pk, map[string]Value{cursorKey.sk: StringValue{start.String()}})
+
+	return err
+}
+
+func (c Client) xGroupCursorGet(key string, group string) (id XID, err error) {
+	resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
+		ConsistentRead: aws.Bool(true),
+		Key:            c.xGroupCursorKey(key, group).toAV(),
+		TableName:      aws.String(c.table),
+	}).Send(context.TODO())
+	if err != nil {
+		return
+	}
+
+	cursor := aws.StringValue(resp.Item[vk].S)
+	if cursor == "" {
+		return id, ErrXGroupNotInitialized
+	}
+
+	return XID(cursor), nil
+}
+
+func (c Client) xGroupCursorKey(key string, group string) keyDef {
+	return keyDef{pk: strings.Join([]string{"_redimo", key, group}, "/"), sk: "_redimo/cursor"}
+}
 
 func (c Client) XINFO(key string) (err error) { return }
 
@@ -285,11 +319,54 @@ func (c Client) xRange(key string, start, stop XID, count int64, forward bool) (
 	return
 }
 
+func (c Client) xGroupCursorPush(key string, group string, id XID) (err error) {
+	builder := newExpresionBuilder()
+	builder.updateSET(vk, StringValue{id.String()})
+	builder.addConditionLessThan(vk, StringValue{id.String()})
+
+	_, err = c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
+		ConditionExpression:       builder.conditionExpression(),
+		ExpressionAttributeNames:  builder.expressionAttributeNames(),
+		ExpressionAttributeValues: builder.expressionAttributeValues(),
+		Key:                       c.xGroupCursorKey(key, group).toAV(),
+		TableName:                 aws.String(c.table),
+		UpdateExpression:          builder.updateExpression(),
+	}).Send(context.TODO())
+
+	return err
+}
+
 func (c Client) XREAD(key string, from XID, count int64) (items []StreamItem, err error) {
 	return c.XRANGE(key, from.Next(), XEnd, count)
 }
 
-func (c Client) XREADGROUP(key string) (err error) { return }
+func (c Client) XREADGROUP(key string, group string, consumer string, noACK bool) (item StreamItem, err error) {
+	retryCount := 0
+	for retryCount < 5 {
+		currentCursor, err := c.xGroupCursorGet(key, group)
+		if err != nil {
+			return item, err
+		}
+
+		items, err := c.XRANGE(key, currentCursor.Next(), XEnd, 1)
+
+		if err != nil || len(items) == 0 {
+			return item, err
+		}
+
+		item = items[0]
+
+		err = c.xGroupCursorPush(key, group, item.ID)
+		if conditionFailureError(err) {
+			retryCount++
+			continue
+		}
+
+		return item, nil
+	}
+
+	return item, errors.New("too much contention")
+}
 
 func (c Client) XREVRANGE(key string, end, start XID, count int64) (streamItems []StreamItem, err error) {
 	return c.xRange(key, start, end, count, false)
