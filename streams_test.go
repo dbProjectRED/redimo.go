@@ -95,7 +95,7 @@ func TestStreamDeletes(t *testing.T) {
 	assert.Equal(t, 3, len(items))
 	assert.Equal(t, insertID5, items[2].ID)
 
-	deletedCount, err = c.XTRIM("x1", items[1].ID)
+	deletedCount, err = c.XTRIM("x1", 2)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), deletedCount)
 

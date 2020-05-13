@@ -295,7 +295,7 @@ func (c Client) XREVRANGE(key string, end, start XID, count int64) (streamItems 
 	return c.xRange(key, start, end, count, false)
 }
 
-func (c Client) XTRIM(key string, until XID) (count int64, err error) {
+func (c Client) XTRIM(key string, newCount int64) (deletedCount int64, err error) {
 	hasMoreResults := true
 
 	var cursor map[string]dynamodb.AttributeValue
@@ -303,8 +303,9 @@ func (c Client) XTRIM(key string, until XID) (count int64, err error) {
 	for hasMoreResults {
 		builder := newExpresionBuilder()
 		builder.addConditionEquality(pk, StringValue{key})
-		builder.condition(fmt.Sprintf("#%v < :until", sk), sk)
-		builder.values["until"] = StringValue{until.String()}.toAV()
+		builder.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", sk), sk)
+		builder.values["start"] = dynamodb.AttributeValue{S: aws.String(XStart.String())}
+		builder.values["stop"] = dynamodb.AttributeValue{S: aws.String(XEnd.String())}
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 			ConsistentRead:            aws.Bool(c.consistentReads),
 			ExclusiveStartKey:         cursor,
@@ -312,12 +313,12 @@ func (c Client) XTRIM(key string, until XID) (count int64, err error) {
 			ExpressionAttributeValues: builder.expressionAttributeValues(),
 			KeyConditionExpression:    builder.conditionExpression(),
 			ProjectionExpression:      aws.String(strings.Join([]string{pk, sk}, ",")),
-			ScanIndexForward:          aws.Bool(true),
+			ScanIndexForward:          aws.Bool(false),
 			TableName:                 aws.String(c.table),
 		}).Send(context.TODO())
 
 		if err != nil {
-			return count, err
+			return deletedCount, err
 		}
 
 		if len(resp.LastEvaluatedKey) > 0 {
@@ -329,15 +330,21 @@ func (c Client) XTRIM(key string, until XID) (count int64, err error) {
 		var sortKeys []string
 
 		for _, item := range resp.Items {
-			parsedItem := parseKey(item)
-			sortKeys = append(sortKeys, parsedItem.sk)
+			if newCount == 0 {
+				parsedItem := parseKey(item)
+				sortKeys = append(sortKeys, parsedItem.sk)
+			} else {
+				newCount--
+			}
 		}
 
-		count += int64(len(sortKeys))
-		err = c.HDEL(key, sortKeys...)
+		if len(sortKeys) > 0 {
+			deletedCount += int64(len(sortKeys))
+			err = c.HDEL(key, sortKeys...)
 
-		if err != nil {
-			return count, err
+			if err != nil {
+				return deletedCount, err
+			}
 		}
 	}
 
