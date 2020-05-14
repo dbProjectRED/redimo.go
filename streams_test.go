@@ -129,17 +129,18 @@ func TestStreamsConsumerGroupsNoACK(t *testing.T) {
 	consumer1 := "mercury"
 	consumer2 := "venus"
 	consumer3 := "earth"
-	item1, err := c.XREADGROUP(key, group, consumer1, XReadNewAutoACK)
-	assert.NoError(t, err)
-	assert.Equal(t, allItems[0], item1)
 
-	item2, err := c.XREADGROUP(key, group, consumer2, XReadNewAutoACK)
+	item1, err := c.XREADGROUP(key, group, consumer1, XReadNewAutoACK, 1)
 	assert.NoError(t, err)
-	assert.Equal(t, allItems[1], item2)
+	assert.Equal(t, allItems[0], item1[0])
 
-	item3, err := c.XREADGROUP(key, group, consumer3, XReadNewAutoACK)
+	item2, err := c.XREADGROUP(key, group, consumer2, XReadNewAutoACK, 1)
 	assert.NoError(t, err)
-	assert.Equal(t, allItems[2], item3)
+	assert.Equal(t, allItems[1], item2[0])
+
+	item3, err := c.XREADGROUP(key, group, consumer3, XReadNewAutoACK, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, allItems[2], item3[0])
 
 	collector := make(chan StreamItem)
 	wg := sync.WaitGroup{}
@@ -148,11 +149,11 @@ func TestStreamsConsumerGroupsNoACK(t *testing.T) {
 		wg.Add(1)
 
 		go func() {
-			item, err := c.XREADGROUP(key, group, "parallel!", XReadNewAutoACK)
+			item, err := c.XREADGROUP(key, group, "parallel!", XReadNewAutoACK, 1)
 			if err != nil {
 				assert.NoError(t, err)
 			} else {
-				collector <- item
+				collector <- item[0]
 			}
 
 			wg.Add(-1)
@@ -196,28 +197,47 @@ func TestStreamsConsumerGroupACK(t *testing.T) {
 	consumer1 := "mercury"
 	consumer2 := "venus"
 	consumer3 := "earth"
-	item1, err := c.XREADGROUP(key, group, consumer1, XReadNew)
+	item1, err := c.XREADGROUP(key, group, consumer1, XReadNew, 1)
 	assert.NoError(t, err)
-	assert.Equal(t, allItems[0], item1)
+	assert.Equal(t, allItems[0], item1[0])
 
-	item2, err := c.XREADGROUP(key, group, consumer2, XReadNew)
+	item2, err := c.XREADGROUP(key, group, consumer2, XReadNew, 1)
 	assert.NoError(t, err)
-	assert.Equal(t, allItems[1], item2)
+	assert.Equal(t, allItems[1], item2[0])
 
-	item3, err := c.XREADGROUP(key, group, consumer3, XReadNew)
+	item3, err := c.XREADGROUP(key, group, consumer3, XReadNew, 1)
 	assert.NoError(t, err)
-	assert.Equal(t, allItems[2], item3)
+	assert.Equal(t, allItems[2], item3[0])
 
 	pendingItems, err := c.XPENDING(key, group, 100)
 	assert.NoError(t, err)
 	assert.Equal(t, 3, len(pendingItems))
 
-	assert.Equal(t, pendingItems[0].ID, item1.ID)
-	assert.Equal(t, pendingItems[1].ID, item2.ID)
-	assert.Equal(t, pendingItems[2].ID, item3.ID)
+	assert.Equal(t, pendingItems[0].ID, item1[0].ID)
+	assert.Equal(t, pendingItems[1].ID, item2[0].ID)
+	assert.Equal(t, pendingItems[2].ID, item3[0].ID)
 	assert.Equal(t, consumer1, pendingItems[0].Consumer)
 	assert.Equal(t, consumer2, pendingItems[1].Consumer)
 	assert.Equal(t, consumer3, pendingItems[2].Consumer)
 	assert.Equal(t, int64(1), pendingItems[0].DeliveryCount)
 	assert.GreaterOrEqual(t, pendingItems[0].LastDelivered.Unix(), nowTS)
+
+	redeliveredItem1, err := c.XREADGROUP(key, group, consumer1, XReadPending, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, item1, redeliveredItem1)
+
+	redeliveredItem2, err := c.XREADGROUP(key, group, consumer2, XReadPending, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, item2, redeliveredItem2)
+
+	pendingItems, err = c.XPENDING(key, group, 100)
+	assert.NoError(t, err)
+	assert.Equal(t, pendingItems[0].ID, item1[0].ID)
+	assert.Equal(t, pendingItems[1].ID, item2[0].ID)
+	assert.Equal(t, pendingItems[2].ID, item3[0].ID)
+	assert.Equal(t, consumer1, pendingItems[0].Consumer)
+	assert.Equal(t, consumer2, pendingItems[1].Consumer)
+	assert.Equal(t, 3, len(pendingItems))
+	assert.Equal(t, int64(2), pendingItems[0].DeliveryCount)
+	assert.Equal(t, int64(2), pendingItems[1].DeliveryCount)
 }

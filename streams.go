@@ -106,6 +106,24 @@ func (pi PendingItem) toPutAction(key string, table string) dynamodb.TransactWri
 	}
 }
 
+func (pi PendingItem) updateDeliveryAction(key string, table string) *dynamodb.UpdateItemInput {
+	builder := newExpresionBuilder()
+	builder.addConditionEquality(consumerKey, StringValue{pi.Consumer})
+	builder.updateSET(lastDeliveryTimestampKey, NumericValue{big.NewFloat(float64(time.Now().Unix()))})
+	builder.clauses["ADD"] = append(builder.clauses["ADD"], fmt.Sprintf("#%v :delta", deliveryCountKey))
+	builder.keys[deliveryCountKey] = struct{}{}
+	builder.values["delta"] = NumericValue{big.NewFloat(1)}.toAV()
+
+	return &dynamodb.UpdateItemInput{
+		ConditionExpression:       builder.conditionExpression(),
+		ExpressionAttributeNames:  builder.expressionAttributeNames(),
+		ExpressionAttributeValues: builder.expressionAttributeValues(),
+		Key:                       keyDef{pk: key, sk: pi.ID.String()}.toAV(),
+		TableName:                 aws.String(table),
+		UpdateExpression:          builder.updateExpression(),
+	}
+}
+
 func parsePendingItem(avm map[string]dynamodb.AttributeValue) (pi PendingItem) {
 	pi.ID = XID(aws.StringValue(avm[sk].S))
 	pi.Consumer = aws.StringValue(avm[consumerKey].S)
@@ -233,6 +251,7 @@ func (c Client) XGROUP(key string, group string, start XID) (err error) {
 	err = c.xGroupCursorSet(key, group, start)
 	return
 }
+
 func (c Client) xGroupCursorSet(key string, group string, start XID) error {
 	cursorKey := c.xGroupCursorKey(key, group)
 	_, err := c.HSET(cursorKey.pk, map[string]Value{cursorKey.sk: StringValue{start.String()}})
@@ -265,8 +284,6 @@ func (c Client) xGroupCursorKey(key string, group string) keyDef {
 func (c Client) xGroupKey(key string, group string) string {
 	return strings.Join([]string{"_redimo", key, group}, "/")
 }
-
-func (c Client) XINFO(key string) (err error) { return }
 
 func (c Client) XLEN(key string, start, stop XID) (count int64, err error) {
 	hasMoreResults := true
@@ -385,21 +402,24 @@ func (c Client) xRange(key string, start, stop XID, count int64, forward bool) (
 		}
 
 		for _, resultItem := range resp.Items {
-			fieldMap := make(map[string]string)
-
-			for k, v := range resultItem {
-				if strings.HasPrefix(k, "_") {
-					fieldMap[k[1:]] = aws.StringValue(v.S)
-				}
-			}
-
-			streamItems = append(streamItems, StreamItem{
-				ID:     XID(aws.StringValue(resultItem[sk].S)),
-				Fields: fieldMap,
-			})
+			streamItems = append(streamItems, parseStreamItem(resultItem))
 			count--
 		}
 	}
+
+	return
+}
+
+func parseStreamItem(item map[string]dynamodb.AttributeValue) (si StreamItem) {
+	si.Fields = make(map[string]string)
+
+	for k, v := range item {
+		if strings.HasPrefix(k, "_") {
+			si.Fields[k[1:]] = aws.StringValue(v.S)
+		}
+	}
+
+	si.ID = XID(aws.StringValue(item[sk].S))
 
 	return
 }
@@ -433,21 +453,81 @@ const (
 	XReadNewAutoACK XReadOption = "READ_NEW_NO_ACK"
 )
 
-func (c Client) XREADGROUP(key string, group string, consumer string, option XReadOption) (item StreamItem, err error) {
+func (c Client) xGroupReadPending(key string, group string, consumer string, count int64) (items []StreamItem, err error) {
+	hasMoreResults := true
+
+	var cursor map[string]dynamodb.AttributeValue
+
+	for hasMoreResults && count > 0 {
+		query := newExpresionBuilder()
+		query.addConditionEquality(pk, StringValue{c.xGroupKey(key, group)})
+		query.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", sk), sk)
+		query.values["start"] = StringValue{XStart.String()}.toAV()
+		query.values["stop"] = StringValue{XEnd.String()}.toAV()
+		query.values[consumerKey] = StringValue{consumer}.toAV()
+		query.keys[consumerKey] = struct{}{}
+		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
+			ConsistentRead:            aws.Bool(c.consistentReads),
+			ExclusiveStartKey:         cursor,
+			ExpressionAttributeNames:  query.expressionAttributeNames(),
+			ExpressionAttributeValues: query.expressionAttributeValues(),
+			FilterExpression:          aws.String(fmt.Sprintf("#%v = :%v", consumerKey, consumerKey)),
+			KeyConditionExpression:    query.conditionExpression(),
+			Limit:                     aws.Int64(count),
+			ScanIndexForward:          aws.Bool(true),
+			TableName:                 aws.String(c.table),
+		}).Send(context.TODO())
+
+		if err != nil {
+			return items, err
+		}
+
+		if len(resp.LastEvaluatedKey) > 0 {
+			cursor = resp.LastEvaluatedKey
+		} else {
+			hasMoreResults = false
+		}
+
+		for _, item := range resp.Items {
+			pendingItem := parsePendingItem(item)
+
+			_, err = c.ddbClient.UpdateItemRequest(pendingItem.updateDeliveryAction(c.xGroupKey(key, group), c.table)).Send(context.TODO())
+			if err != nil {
+				return items, err
+			}
+
+			fetchedItems, err := c.XRANGE(key, pendingItem.ID, pendingItem.ID, 1)
+			if err != nil || len(fetchedItems) < 1 {
+				return items, err
+			}
+
+			items = append(items, fetchedItems[0])
+			count--
+		}
+	}
+
+	return
+}
+func (c Client) XREADGROUP(key string, group string, consumer string, option XReadOption, maxCount int64) (items []StreamItem, err error) {
+	if option == XReadPending {
+		return c.xGroupReadPending(key, group, consumer, maxCount)
+	}
+
 	retryCount := 0
+
 	for retryCount < 5 {
 		currentCursor, err := c.xGroupCursorGet(key, group)
 		if err != nil {
-			return item, err
+			return items, err
 		}
 
 		items, err := c.XRANGE(key, currentCursor.Next(), XEnd, 1)
 
 		if err != nil || len(items) == 0 {
-			return item, err
+			return items, err
 		}
 
-		item = items[0]
+		item := items[0]
 
 		var actions []dynamodb.TransactWriteItem
 		actions = append(actions, c.xGroupCursorPushAction(key, group, item.ID))
@@ -464,16 +544,16 @@ func (c Client) XREADGROUP(key string, group string, consumer string, option XRe
 			TransactItems: actions,
 		}).Send(context.TODO())
 		if err == nil {
-			return item, nil
+			return items, nil
 		}
 
 		if !conditionFailureError(err) {
-			return item, err
+			return items, err
 		}
 		retryCount++
 	}
 
-	return item, errors.New("too much contention")
+	return items, errors.New("too much contention")
 }
 
 func (c Client) XREVRANGE(key string, end, start XID, count int64) (streamItems []StreamItem, err error) {
