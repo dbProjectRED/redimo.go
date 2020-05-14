@@ -248,4 +248,25 @@ func TestStreamsConsumerGroupACK(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(pendingItems))
 	assert.Equal(t, pendingItems[0].ID, item3[0].ID)
+	assert.Equal(t, consumer3, pendingItems[0].Consumer)
+
+	claimedItems, err := c.XCLAIM(key, group, consumer1, pendingItems[0].LastDelivered, pendingItems[0].ID)
+	assert.NoError(t, err)
+	assert.Len(t, claimedItems, 1)
+
+	pendingItems, err = c.XPENDING(key, group, 100)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(pendingItems))
+	assert.Equal(t, pendingItems[0].ID, item3[0].ID)
+	assert.Equal(t, consumer1, pendingItems[0].Consumer)
+
+	claimedItems, err = c.XCLAIM(key, group, consumer2, pendingItems[0].LastDelivered.Add(-10*time.Second), pendingItems[0].ID)
+	assert.NoError(t, err)
+	assert.Len(t, claimedItems, 0)
+
+	pendingItems, err = c.XPENDING(key, group, 100)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(pendingItems))
+	assert.Equal(t, pendingItems[0].ID, item3[0].ID)
+	assert.Equal(t, consumer1, pendingItems[0].Consumer)
 }

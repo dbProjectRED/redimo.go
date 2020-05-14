@@ -243,7 +243,43 @@ func (c Client) xInitAction(key string) dynamodb.TransactWriteItem {
 	}
 }
 
-func (c Client) XCLAIM(key string) (err error) { return }
+func (c Client) XCLAIM(key string, group string, consumer string, lastDeliveredBefore time.Time, ids ...XID) (items []StreamItem, err error) {
+	for _, id := range ids {
+		builder := newExpresionBuilder()
+		builder.addConditionExists(pk)
+		builder.addConditionLessThanOrEqualTo(lastDeliveryTimestampKey, NumericValue{big.NewFloat(float64(lastDeliveredBefore.Unix()))})
+		builder.updateSET(lastDeliveryTimestampKey, NumericValue{big.NewFloat(float64(time.Now().Unix()))})
+		builder.updateSET(deliveryCountKey, NumericValue{big.NewFloat(0)})
+		builder.updateSET(consumerKey, StringValue{consumer})
+
+		_, err = c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
+			ConditionExpression:       builder.conditionExpression(),
+			ExpressionAttributeNames:  builder.expressionAttributeNames(),
+			ExpressionAttributeValues: builder.expressionAttributeValues(),
+			Key:                       keyDef{pk: c.xGroupKey(key, group), sk: id.String()}.toAV(),
+			TableName:                 aws.String(c.table),
+			UpdateExpression:          builder.updateExpression(),
+		}).Send(context.TODO())
+
+		if conditionFailureError(err) {
+			continue
+		}
+
+		if err != nil {
+			return items, err
+		}
+
+		fetchedItems, err := c.XRANGE(key, id, id, 1)
+
+		if err != nil || len(fetchedItems) < 1 {
+			return items, fmt.Errorf("could not loat stream item: %w", err)
+		}
+
+		items = append(items, fetchedItems[0])
+	}
+
+	return items, nil
+}
 
 func (c Client) XDEL(key string, ids ...XID) (count int64, err error) {
 	for _, id := range ids {
@@ -525,6 +561,7 @@ func (c Client) xGroupReadPending(key string, group string, consumer string, cou
 
 	return
 }
+
 func (c Client) XREADGROUP(key string, group string, consumer string, option XReadOption, maxCount int64) (items []StreamItem, err error) {
 	if option == XReadPending {
 		return c.xGroupReadPending(key, group, consumer, maxCount)

@@ -128,6 +128,12 @@ func (b *expressionBuilder) addConditionLessThan(attributeName string, value Val
 	b.values[valueName] = value.toAV()
 }
 
+func (b *expressionBuilder) addConditionLessThanOrEqualTo(attributeName string, value Value) {
+	valueName := "cval" + strconv.Itoa(len(b.conditions))
+	b.condition(fmt.Sprintf("#%v <= :%v", attributeName, valueName), attributeName)
+	b.values[valueName] = value.toAV()
+}
+
 func (b *expressionBuilder) updateSET(attributeName string, value Value) {
 	b.SET(fmt.Sprintf("#%v = :%v", attributeName, attributeName), attributeName, value.toAV())
 }
