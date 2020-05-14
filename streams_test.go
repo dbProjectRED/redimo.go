@@ -129,15 +129,15 @@ func TestStreamsConsumerGroupsNoACK(t *testing.T) {
 	consumer1 := "mercury"
 	consumer2 := "venus"
 	consumer3 := "earth"
-	item1, err := c.XREADGROUP(key, group, consumer1, true)
+	item1, err := c.XREADGROUP(key, group, consumer1, XReadNewAutoACK)
 	assert.NoError(t, err)
 	assert.Equal(t, allItems[0], item1)
 
-	item2, err := c.XREADGROUP(key, group, consumer2, true)
+	item2, err := c.XREADGROUP(key, group, consumer2, XReadNewAutoACK)
 	assert.NoError(t, err)
 	assert.Equal(t, allItems[1], item2)
 
-	item3, err := c.XREADGROUP(key, group, consumer3, true)
+	item3, err := c.XREADGROUP(key, group, consumer3, XReadNewAutoACK)
 	assert.NoError(t, err)
 	assert.Equal(t, allItems[2], item3)
 
@@ -148,7 +148,7 @@ func TestStreamsConsumerGroupsNoACK(t *testing.T) {
 		wg.Add(1)
 
 		go func() {
-			item, err := c.XREADGROUP(key, group, "parallel!", true)
+			item, err := c.XREADGROUP(key, group, "parallel!", XReadNewAutoACK)
 			if err != nil {
 				assert.NoError(t, err)
 			} else {
@@ -196,15 +196,15 @@ func TestStreamsConsumerGroupACK(t *testing.T) {
 	consumer1 := "mercury"
 	consumer2 := "venus"
 	consumer3 := "earth"
-	item1, err := c.XREADGROUP(key, group, consumer1, false)
+	item1, err := c.XREADGROUP(key, group, consumer1, XReadNew)
 	assert.NoError(t, err)
 	assert.Equal(t, allItems[0], item1)
 
-	item2, err := c.XREADGROUP(key, group, consumer2, false)
+	item2, err := c.XREADGROUP(key, group, consumer2, XReadNew)
 	assert.NoError(t, err)
 	assert.Equal(t, allItems[1], item2)
 
-	item3, err := c.XREADGROUP(key, group, consumer3, false)
+	item3, err := c.XREADGROUP(key, group, consumer3, XReadNew)
 	assert.NoError(t, err)
 	assert.Equal(t, allItems[2], item3)
 

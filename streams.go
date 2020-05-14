@@ -425,7 +425,15 @@ func (c Client) XREAD(key string, from XID, count int64) (items []StreamItem, er
 	return c.XRANGE(key, from.Next(), XEnd, count)
 }
 
-func (c Client) XREADGROUP(key string, group string, consumer string, noACK bool) (item StreamItem, err error) {
+type XReadOption string
+
+const (
+	XReadPending    XReadOption = "PENDING"
+	XReadNew        XReadOption = "READ_NEW"
+	XReadNewAutoACK XReadOption = "READ_NEW_NO_ACK"
+)
+
+func (c Client) XREADGROUP(key string, group string, consumer string, option XReadOption) (item StreamItem, err error) {
 	retryCount := 0
 	for retryCount < 5 {
 		currentCursor, err := c.xGroupCursorGet(key, group)
@@ -444,7 +452,7 @@ func (c Client) XREADGROUP(key string, group string, consumer string, noACK bool
 		var actions []dynamodb.TransactWriteItem
 		actions = append(actions, c.xGroupCursorPushAction(key, group, item.ID))
 
-		if !noACK {
+		if option == XReadNew {
 			actions = append(actions, PendingItem{
 				ID:            item.ID,
 				Consumer:      consumer,
