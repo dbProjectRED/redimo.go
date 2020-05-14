@@ -1,5 +1,7 @@
 # REDIMO
 
+![Go](https://github.com/sudhirj/redimo.go/workflows/Go/badge.svg)
+
 Redimo is a Redis-compatible server that uses AWS DynamoDB as the storage backend, which offers a lot of important benefits:
 
 * The size of your data is no longer limited to the RAM in a single machine – it lives on the near-infinite capacity offered by DynamoDB.
