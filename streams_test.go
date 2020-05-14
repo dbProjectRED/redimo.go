@@ -240,4 +240,12 @@ func TestStreamsConsumerGroupACK(t *testing.T) {
 	assert.Equal(t, 3, len(pendingItems))
 	assert.Equal(t, int64(2), pendingItems[0].DeliveryCount)
 	assert.Equal(t, int64(2), pendingItems[1].DeliveryCount)
+
+	_, err = c.XACK(key, group, item1[0].ID, item2[0].ID)
+	assert.NoError(t, err)
+
+	pendingItems, err = c.XPENDING(key, group, 100)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(pendingItems))
+	assert.Equal(t, pendingItems[0].ID, item3[0].ID)
 }

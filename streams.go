@@ -17,9 +17,9 @@ type XID string
 
 var ErrXGroupNotInitialized = errors.New("group not initialized")
 
-const consumerKey = "c"
-const lastDeliveryTimestampKey = "ldt"
-const deliveryCountKey = "dc"
+const consumerKey = "cnk"
+const lastDeliveryTimestampKey = "ldk"
+const deliveryCountKey = "dck"
 const (
 	XStart  XID = "00000000000000000000-00000000000000000000"
 	XEnd    XID = "99999999999999999999-99999999999999999999"
@@ -156,7 +156,24 @@ func (i StreamItem) toAV(key string) map[string]dynamodb.AttributeValue {
 	return avm
 }
 
-func (c Client) XACK(key string) (err error) { return }
+func (c Client) XACK(key string, group string, ids ...XID) (ackCount int64, err error) {
+	for _, id := range ids {
+		resp, err := c.ddbClient.DeleteItemRequest(&dynamodb.DeleteItemInput{
+			Key:          keyDef{pk: c.xGroupKey(key, group), sk: id.String()}.toAV(),
+			ReturnValues: dynamodb.ReturnValueAllOld,
+			TableName:    aws.String(c.table),
+		}).Send(context.TODO())
+		if err != nil {
+			return ackCount, err
+		}
+
+		if len(resp.Attributes) > 0 {
+			ackCount++
+		}
+	}
+
+	return
+}
 
 func (c Client) XADD(key string, id XID, fields map[string]string) (returnedID XID, err error) {
 	retry := true
