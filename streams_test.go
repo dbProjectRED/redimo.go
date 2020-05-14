@@ -148,7 +148,7 @@ func TestStreamsConsumerGroupsNoACK(t *testing.T) {
 		wg.Add(1)
 
 		go func() {
-			item, err := c.XREADGROUP(key, group, consumer1, true)
+			item, err := c.XREADGROUP(key, group, "parallel!", true)
 			if err != nil {
 				assert.NoError(t, err)
 			} else {
@@ -171,4 +171,53 @@ func TestStreamsConsumerGroupsNoACK(t *testing.T) {
 	}
 
 	assert.ElementsMatch(t, allItems[3:8], parallelItems)
+}
+
+func TestStreamsConsumerGroupACK(t *testing.T) {
+	c := newClient(t)
+	allItems := make([]StreamItem, 0, 25)
+	key := "x1"
+	group := "group"
+
+	for i := 0; i < 5; i++ {
+		fields := map[string]string{"i": strconv.Itoa(i)}
+		insertedID, err := c.XADD(key, XAutoID, fields)
+
+		allItems = append(allItems, StreamItem{ID: insertedID, Fields: fields})
+
+		assert.NoError(t, err)
+	}
+
+	err := c.XGROUP(key, group, XStart)
+	assert.NoError(t, err)
+
+	nowTS := time.Now().Unix()
+
+	consumer1 := "mercury"
+	consumer2 := "venus"
+	consumer3 := "earth"
+	item1, err := c.XREADGROUP(key, group, consumer1, false)
+	assert.NoError(t, err)
+	assert.Equal(t, allItems[0], item1)
+
+	item2, err := c.XREADGROUP(key, group, consumer2, false)
+	assert.NoError(t, err)
+	assert.Equal(t, allItems[1], item2)
+
+	item3, err := c.XREADGROUP(key, group, consumer3, false)
+	assert.NoError(t, err)
+	assert.Equal(t, allItems[2], item3)
+
+	pendingItems, err := c.XPENDING(key, group, 100)
+	assert.NoError(t, err)
+	assert.Equal(t, 3, len(pendingItems))
+
+	assert.Equal(t, pendingItems[0].ID, item1.ID)
+	assert.Equal(t, pendingItems[1].ID, item2.ID)
+	assert.Equal(t, pendingItems[2].ID, item3.ID)
+	assert.Equal(t, consumer1, pendingItems[0].Consumer)
+	assert.Equal(t, consumer2, pendingItems[1].Consumer)
+	assert.Equal(t, consumer3, pendingItems[2].Consumer)
+	assert.Equal(t, int64(1), pendingItems[0].DeliveryCount)
+	assert.GreaterOrEqual(t, pendingItems[0].LastDelivered.Unix(), nowTS)
 }
