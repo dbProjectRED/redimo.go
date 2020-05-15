@@ -93,25 +93,26 @@ func (c Client) ZADD(key string, membersWithScores map[string]float64, flags Fla
 			builder.addConditionExists(pk)
 		}
 
-		_, err = c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
+		resp, err := c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
 			ConditionExpression:       builder.conditionExpression(),
 			ExpressionAttributeNames:  builder.expressionAttributeNames(),
 			ExpressionAttributeValues: builder.expressionAttributeValues(),
+			Key:                       keyDef{pk: key, sk: member}.toAV(),
+			ReturnValues:              dynamodb.ReturnValueAllOld,
+			TableName:                 aws.String(c.table),
 			UpdateExpression:          builder.updateExpression(),
-			Key: keyDef{
-				pk: key,
-				sk: member,
-			}.toAV(),
-			TableName: aws.String(c.table),
 		}).Send(context.TODO())
 		if conditionFailureError(err) {
 			continue
 		}
 
 		if err != nil {
-			return
+			return addedCount, err
 		}
-		addedCount++
+
+		if len(resp.Attributes) == 0 {
+			addedCount++
+		}
 	}
 
 	return
@@ -387,41 +388,39 @@ func (c Client) zRank(key string, member string, forward bool) (rank int64, ok b
 	return
 }
 
-func (c Client) ZREM(key string, members ...string) (count int64, err error) {
+func (c Client) ZREM(key string, members ...string) (removedCount int64, err error) {
 	for _, member := range members {
 		builder := newExpresionBuilder()
 		builder.addConditionExists(pk)
 
-		_, err = c.ddbClient.DeleteItemRequest(&dynamodb.DeleteItemInput{
+		_, err := c.ddbClient.DeleteItemRequest(&dynamodb.DeleteItemInput{
 			ConditionExpression:       builder.conditionExpression(),
 			ExpressionAttributeNames:  builder.expressionAttributeNames(),
 			ExpressionAttributeValues: builder.expressionAttributeValues(),
-			Key: keyDef{
-				pk: key,
-				sk: member,
-			}.toAV(),
-			TableName: aws.String(c.table),
+			Key:                       keyDef{pk: key, sk: member}.toAV(),
+			TableName:                 aws.String(c.table),
 		}).Send(context.TODO())
 		if conditionFailureError(err) {
 			continue
 		}
 
 		if err != nil {
-			return count, err
+			return removedCount, err
 		}
-		count++
+
+		removedCount++
 	}
 
-	return count, nil
+	return removedCount, nil
 }
 
-func (c Client) ZREMRANGEBYLEX(key string, min, max string) (count int64, err error) {
+func (c Client) ZREMRANGEBYLEX(key string, min, max string) (removedCount int64, err error) {
 	membersWithScores, err := c.ZRANGEBYLEX(key, min, max, 0, 0)
 	if err == nil {
-		_, err = c.ZREM(key, zReadKeys(membersWithScores)...)
+		removedCount, err = c.ZREM(key, zReadKeys(membersWithScores)...)
 	}
 
-	return int64(len(membersWithScores)), err
+	return
 }
 
 func zReadKeys(membersWithScores map[string]float64) []string {
@@ -433,22 +432,22 @@ func zReadKeys(membersWithScores map[string]float64) []string {
 	return members
 }
 
-func (c Client) ZREMRANGEBYRANK(key string, start, stop int64) (count int64, err error) {
+func (c Client) ZREMRANGEBYRANK(key string, start, stop int64) (removedCount int64, err error) {
 	membersWithScores, err := c.ZRANGE(key, start, stop)
 	if err == nil {
-		_, err = c.ZREM(key, zReadKeys(membersWithScores)...)
+		removedCount, err = c.ZREM(key, zReadKeys(membersWithScores)...)
 	}
 
-	return int64(len(membersWithScores)), err
+	return
 }
 
-func (c Client) ZREMRANGEBYSCORE(key string, min, max float64) (count int64, err error) {
+func (c Client) ZREMRANGEBYSCORE(key string, min, max float64) (removedCount int64, err error) {
 	membersWithScores, err := c.ZRANGEBYSCORE(key, min, max, 0, 0)
 	if err == nil {
-		_, err = c.ZREM(key, zReadKeys(membersWithScores)...)
+		removedCount, err = c.ZREM(key, zReadKeys(membersWithScores)...)
 	}
 
-	return int64(len(membersWithScores)), err
+	return
 }
 
 func (c Client) ZREVRANGE(key string, start, stop int64) (membersWithScores map[string]float64, err error) {

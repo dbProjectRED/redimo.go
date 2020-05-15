@@ -9,3 +9,8 @@ func (c Client) EXISTS(keys ...string) (existingCount int64, err error) {
 	// TODO
 	return
 }
+
+func (c Client) UNLINK(keys ...string) (count int64, err error) {
+	// TODO
+	return
+}

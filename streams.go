@@ -280,7 +280,7 @@ func (c Client) XCLAIM(key string, group string, consumer string, lastDeliveredB
 	return items, nil
 }
 
-func (c Client) XDEL(key string, ids ...XID) (count int64, err error) {
+func (c Client) XDEL(key string, ids ...XID) (deletedCount int64, err error) {
 	for _, id := range ids {
 		resp, err := c.ddbClient.DeleteItemRequest(&dynamodb.DeleteItemInput{
 			Key:          keyDef{pk: key, sk: id.String()}.toAV(),
@@ -288,11 +288,11 @@ func (c Client) XDEL(key string, ids ...XID) (count int64, err error) {
 			TableName:    aws.String(c.table),
 		}).Send(context.TODO())
 		if err != nil {
-			return count, err
+			return deletedCount, err
 		}
 
 		if len(resp.Attributes) > 0 {
-			count++
+			deletedCount++
 		}
 	}
 
