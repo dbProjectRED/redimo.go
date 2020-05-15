@@ -1,6 +1,7 @@
 package redimo
 
 import (
+	"bytes"
 	"math/big"
 	"strconv"
 
@@ -48,6 +49,10 @@ type ReturnValue struct {
 	AV dynamodb.AttributeValue
 }
 
+func (rv ReturnValue) ToAV() dynamodb.AttributeValue {
+	return rv.AV
+}
+
 func (rv ReturnValue) String() string {
 	return aws.StringValue(rv.AV.S)
 }
@@ -83,4 +88,10 @@ func (rv ReturnValue) Empty() bool {
 
 func (rv ReturnValue) Present() bool {
 	return !rv.Empty()
+}
+
+func (rv ReturnValue) Equals(ov ReturnValue) bool {
+	return bytes.Equal(rv.AV.B, ov.AV.B) &&
+		aws.StringValue(rv.AV.S) == aws.StringValue(ov.AV.S) &&
+		aws.StringValue(rv.AV.N) == aws.StringValue(ov.AV.N)
 }
