@@ -15,26 +15,26 @@ import (
 const earthRadiusMeters = 6372797.560856
 const skGeoCell = skN1
 
-type Location struct {
+type GLocation struct {
 	Lat float64
 	Lon float64
 }
 
-func (l Location) s2CellID() string {
+func (l GLocation) s2CellID() string {
 	return fmt.Sprintf("%d", s2.CellIDFromLatLng(l.s2LatLng()))
 }
 
-func (l Location) Geohash() string {
+func (l GLocation) Geohash() string {
 	return geohash.Encode(l.Lat, l.Lon)
 }
 
-func (l Location) toAV() dynamodb.AttributeValue {
+func (l GLocation) toAV() dynamodb.AttributeValue {
 	return dynamodb.AttributeValue{
 		N: aws.String(l.s2CellID()),
 	}
 }
 
-func (l *Location) setCellIDString(cellIDStr string) {
+func (l *GLocation) setCellIDString(cellIDStr string) {
 	cellID, _ := strconv.ParseUint(cellIDStr, 10, 64)
 	s2Cell := s2.CellID(cellID)
 	s2LatLon := s2Cell.LatLng()
@@ -42,33 +42,33 @@ func (l *Location) setCellIDString(cellIDStr string) {
 	l.Lon = s2LatLon.Lng.Degrees()
 }
 
-func (l Location) DistanceTo(other Location, unit Unit) float64 {
+func (l GLocation) DistanceTo(other GLocation, unit GUnit) (distance float64) {
 	return Meters.To(unit, l.s2LatLng().Distance(other.s2LatLng()).Radians()*earthRadiusMeters)
 }
 
-func (l Location) s2LatLng() s2.LatLng {
+func (l GLocation) s2LatLng() s2.LatLng {
 	return s2.LatLngFromDegrees(l.Lat, l.Lon)
 }
 
-func fromCellIDString(cellID string) (l Location) {
+func fromCellIDString(cellID string) (l GLocation) {
 	l.setCellIDString(cellID)
 	return
 }
 
-type Unit float64
+type GUnit float64
 
-func (from Unit) To(to Unit, d float64) float64 {
+func (from GUnit) To(to GUnit, d float64) float64 {
 	return (d / float64(to)) * float64(from)
 }
 
 const (
-	Meters     Unit = 1.0
-	Kilometers Unit = 1000.0
-	Miles      Unit = 1609.34
-	Feet       Unit = 0.3048
+	Meters     GUnit = 1.0
+	Kilometers GUnit = 1000.0
+	Miles      GUnit = 1609.34
+	Feet       GUnit = 0.3048
 )
 
-func (c Client) GEOADD(key string, members map[string]Location) (addedCount int64, err error) {
+func (c Client) GEOADD(key string, members map[string]GLocation) (addedCount int64, err error) {
 	for member, location := range members {
 		builder := newExpresionBuilder()
 		builder.updateSetAV(skGeoCell, location.toAV())
@@ -90,7 +90,7 @@ func (c Client) GEOADD(key string, members map[string]Location) (addedCount int6
 	return addedCount, nil
 }
 
-func (c Client) GEODIST(key string, member1, member2 string, unit Unit) (distance float64, ok bool, err error) {
+func (c Client) GEODIST(key string, member1, member2 string, unit GUnit) (distance float64, ok bool, err error) {
 	locations, err := c.GEOPOS(key, member1, member2)
 	if err != nil || len(locations) < 2 {
 		return
@@ -113,8 +113,8 @@ func (c Client) GEOHASH(key string, members ...string) (geohashes []string, err 
 	return
 }
 
-func (c Client) GEOPOS(key string, members ...string) (locations map[string]Location, err error) {
-	locations = make(map[string]Location)
+func (c Client) GEOPOS(key string, members ...string) (locations map[string]GLocation, err error) {
+	locations = make(map[string]GLocation)
 
 	for _, member := range members {
 		resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
@@ -135,8 +135,8 @@ func (c Client) GEOPOS(key string, members ...string) (locations map[string]Loca
 	return
 }
 
-func (c Client) GEORADIUS(key string, center Location, radius float64, radiusUnit Unit, count int64) (positions map[string]Location, err error) {
-	positions = make(map[string]Location)
+func (c Client) GEORADIUS(key string, center GLocation, radius float64, radiusUnit GUnit, count int64) (positions map[string]GLocation, err error) {
+	positions = make(map[string]GLocation)
 	radiusCap := s2.CapFromCenterAngle(s2.PointFromLatLng(center.s2LatLng()), s1.Angle(radiusUnit.To(Meters, radius)/earthRadiusMeters))
 
 	for _, cellID := range radiusCap.CellUnionBound() {
@@ -186,7 +186,7 @@ func (c Client) GEORADIUS(key string, center Location, radius float64, radiusUni
 	return
 }
 
-func (c Client) GEORADIUSBYMEMBER(key string, member string, radius float64, radiusUnit Unit, count int64) (positions map[string]Location, err error) {
+func (c Client) GEORADIUSBYMEMBER(key string, member string, radius float64, radiusUnit GUnit, count int64) (positions map[string]GLocation, err error) {
 	locations, err := c.GEOPOS(key, member)
 	if err == nil {
 		positions, err = c.GEORADIUS(key, locations[member], radius, radiusUnit, count)

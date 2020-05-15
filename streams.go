@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"strconv"
 	"strings"
 	"time"
@@ -42,7 +41,7 @@ const sequenceSK = "_redimo/sequence"
 func (xid XID) sequenceUpdateAction(key string, table string) dynamodb.TransactWriteItem {
 	builder := newExpresionBuilder()
 	builder.condition(fmt.Sprintf("#%v < :%v", vk, vk), vk)
-	builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, StringValue{xid.String()}.toAV())
+	builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, StringValue{xid.String()}.ToAV())
 
 	return dynamodb.TransactWriteItem{
 		Update: &dynamodb.Update{
@@ -89,10 +88,10 @@ type PendingItem struct {
 func (pi PendingItem) toPutAction(key string, table string) dynamodb.TransactWriteItem {
 	builder := newExpresionBuilder()
 	builder.updateSET(consumerKey, StringValue{pi.Consumer})
-	builder.updateSET(lastDeliveryTimestampKey, NumericValue{big.NewFloat(float64(pi.LastDelivered.Unix()))})
+	builder.updateSET(lastDeliveryTimestampKey, IntValue{pi.LastDelivered.Unix()})
 	builder.clauses["ADD"] = append(builder.clauses["ADD"], fmt.Sprintf("#%v :delta", deliveryCountKey))
 	builder.keys[deliveryCountKey] = struct{}{}
-	builder.values["delta"] = NumericValue{big.NewFloat(1)}.toAV()
+	builder.values["delta"] = IntValue{1}.ToAV()
 
 	return dynamodb.TransactWriteItem{
 		Update: &dynamodb.Update{
@@ -109,10 +108,10 @@ func (pi PendingItem) toPutAction(key string, table string) dynamodb.TransactWri
 func (pi PendingItem) updateDeliveryAction(key string, table string) *dynamodb.UpdateItemInput {
 	builder := newExpresionBuilder()
 	builder.addConditionEquality(consumerKey, StringValue{pi.Consumer})
-	builder.updateSET(lastDeliveryTimestampKey, NumericValue{big.NewFloat(float64(time.Now().Unix()))})
+	builder.updateSET(lastDeliveryTimestampKey, IntValue{time.Now().Unix()})
 	builder.clauses["ADD"] = append(builder.clauses["ADD"], fmt.Sprintf("#%v :delta", deliveryCountKey))
 	builder.keys[deliveryCountKey] = struct{}{}
-	builder.values["delta"] = NumericValue{big.NewFloat(1)}.toAV()
+	builder.values["delta"] = IntValue{1}.ToAV()
 
 	return &dynamodb.UpdateItemInput{
 		ConditionExpression:       builder.conditionExpression(),
@@ -146,11 +145,11 @@ func (i StreamItem) putAction(key string, table string) dynamodb.TransactWriteIt
 
 func (i StreamItem) toAV(key string) map[string]dynamodb.AttributeValue {
 	avm := make(map[string]dynamodb.AttributeValue)
-	avm[pk] = StringValue{key}.toAV()
-	avm[sk] = StringValue{i.ID.String()}.toAV()
+	avm[pk] = StringValue{key}.ToAV()
+	avm[sk] = StringValue{i.ID.String()}.ToAV()
 
 	for k, v := range i.Fields {
-		avm["_"+k] = StringValue{v}.toAV()
+		avm["_"+k] = StringValue{v}.ToAV()
 	}
 
 	return avm
@@ -184,13 +183,13 @@ func (c Client) XADD(key string, id XID, fields map[string]string) (returnedID X
 
 		if id == XAutoID {
 			now := time.Now()
-			newSequence, err := c.HINCRBY(key, "_redimo/sequence/"+fmt.Sprintf("%020d", now.Unix()), big.NewInt(1))
+			newSequence, err := c.HINCRBY(key, "_redimo/sequence/"+fmt.Sprintf("%020d", now.Unix()), 1)
 
 			if err != nil {
 				return id, err
 			}
 
-			id = NewXID(now, newSequence.Uint64())
+			id = NewXID(now, uint64(newSequence))
 		}
 
 		actions = append(actions, StreamItem{ID: id, Fields: fields}.putAction(key, c.table))
@@ -229,7 +228,7 @@ func (c Client) xInit(key string) (err error) {
 func (c Client) xInitAction(key string) dynamodb.TransactWriteItem {
 	builder := newExpresionBuilder()
 	builder.addConditionNotExists(vk)
-	builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, StringValue{XStart.String()}.toAV())
+	builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, StringValue{XStart.String()}.ToAV())
 
 	return dynamodb.TransactWriteItem{
 		Update: &dynamodb.Update{
@@ -247,9 +246,9 @@ func (c Client) XCLAIM(key string, group string, consumer string, lastDeliveredB
 	for _, id := range ids {
 		builder := newExpresionBuilder()
 		builder.addConditionExists(pk)
-		builder.addConditionLessThanOrEqualTo(lastDeliveryTimestampKey, NumericValue{big.NewFloat(float64(lastDeliveredBefore.Unix()))})
-		builder.updateSET(lastDeliveryTimestampKey, NumericValue{big.NewFloat(float64(time.Now().Unix()))})
-		builder.updateSET(deliveryCountKey, NumericValue{big.NewFloat(0)})
+		builder.addConditionLessThanOrEqualTo(lastDeliveryTimestampKey, IntValue{lastDeliveredBefore.Unix()})
+		builder.updateSET(lastDeliveryTimestampKey, IntValue{time.Now().Unix()})
+		builder.updateSET(deliveryCountKey, IntValue{0})
 		builder.updateSET(consumerKey, StringValue{consumer})
 
 		_, err = c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
@@ -385,8 +384,8 @@ func (c Client) XPENDING(key string, group string, count int64) (pendingItems []
 		builder := newExpresionBuilder()
 		builder.addConditionEquality(pk, StringValue{c.xGroupKey(key, group)})
 		builder.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", sk), sk)
-		builder.values["start"] = StringValue{XStart.String()}.toAV()
-		builder.values["stop"] = StringValue{XEnd.String()}.toAV()
+		builder.values["start"] = StringValue{XStart.String()}.ToAV()
+		builder.values["stop"] = StringValue{XEnd.String()}.ToAV()
 
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 			ConsistentRead:            aws.Bool(c.consistentReads),
@@ -515,9 +514,9 @@ func (c Client) xGroupReadPending(key string, group string, consumer string, cou
 		query := newExpresionBuilder()
 		query.addConditionEquality(pk, StringValue{c.xGroupKey(key, group)})
 		query.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", sk), sk)
-		query.values["start"] = StringValue{XStart.String()}.toAV()
-		query.values["stop"] = StringValue{XEnd.String()}.toAV()
-		query.values[consumerKey] = StringValue{consumer}.toAV()
+		query.values["start"] = StringValue{XStart.String()}.ToAV()
+		query.values["stop"] = StringValue{XEnd.String()}.ToAV()
+		query.values[consumerKey] = StringValue{consumer}.ToAV()
 		query.keys[consumerKey] = struct{}{}
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 			ConsistentRead:            aws.Bool(c.consistentReads),

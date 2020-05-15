@@ -2,7 +2,6 @@ package redimo
 
 import (
 	"fmt"
-	"math/big"
 	"strconv"
 	"strings"
 
@@ -114,23 +113,23 @@ func (b *expressionBuilder) updateExpression() *string {
 func (b *expressionBuilder) addConditionEquality(attributeName string, value Value) {
 	valueName := "cval" + strconv.Itoa(len(b.conditions))
 	b.condition(fmt.Sprintf("#%v = :%v", attributeName, valueName), attributeName)
-	b.values[valueName] = value.toAV()
+	b.values[valueName] = value.ToAV()
 }
 
 func (b *expressionBuilder) addConditionLessThan(attributeName string, value Value) {
 	valueName := "cval" + strconv.Itoa(len(b.conditions))
 	b.condition(fmt.Sprintf("#%v < :%v", attributeName, valueName), attributeName)
-	b.values[valueName] = value.toAV()
+	b.values[valueName] = value.ToAV()
 }
 
 func (b *expressionBuilder) addConditionLessThanOrEqualTo(attributeName string, value Value) {
 	valueName := "cval" + strconv.Itoa(len(b.conditions))
 	b.condition(fmt.Sprintf("#%v <= :%v", attributeName, valueName), attributeName)
-	b.values[valueName] = value.toAV()
+	b.values[valueName] = value.ToAV()
 }
 
 func (b *expressionBuilder) updateSET(attributeName string, value Value) {
-	b.SET(fmt.Sprintf("#%v = :%v", attributeName, attributeName), attributeName, value.toAV())
+	b.SET(fmt.Sprintf("#%v = :%v", attributeName, attributeName), attributeName, value.ToAV())
 }
 
 func (b *expressionBuilder) updateSetAV(attributeName string, av dynamodb.AttributeValue) {
@@ -201,12 +200,12 @@ func (k keyDef) toAV() map[string]dynamodb.AttributeValue {
 
 type itemDef struct {
 	keyDef
-	val Value
+	val ReturnValue
 }
 
 func (i itemDef) eav() map[string]dynamodb.AttributeValue {
 	eav := i.keyDef.toAV()
-	eav[vk] = i.val.toAV()
+	eav[vk] = i.val.AV
 
 	return eav
 }
@@ -223,16 +222,7 @@ func parseKey(avm map[string]dynamodb.AttributeValue) keyDef {
 
 func parseItem(avm map[string]dynamodb.AttributeValue) (item itemDef) {
 	item.keyDef = parseKey(avm)
-
-	switch {
-	case avm[vk].N != nil:
-		num, _, _ := new(big.Float).Parse(aws.StringValue(avm[vk].N), 10)
-		item.val = NumericValue{bf: num}
-	case avm[vk].S != nil:
-		item.val = StringValue{str: aws.StringValue(avm[vk].S)}
-	case avm[vk].B != nil:
-		item.val = BytesValue{bytes: avm[vk].B}
-	}
+	item.val = ReturnValue{avm[vk]}
 
 	return
 }

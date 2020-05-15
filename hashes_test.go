@@ -1,7 +1,6 @@
 package redimo
 
 import (
-	"math/big"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,11 +14,11 @@ func TestBasicHashes(t *testing.T) {
 
 	val, err := c.HGET("k1", "f1")
 	assert.NoError(t, err)
-	assert.Equal(t, StringValue{"v1"}, val)
+	assert.Equal(t, "v1", val.String())
 
 	val, err = c.HGET("k1", "f2")
 	assert.NoError(t, err)
-	assert.Equal(t, StringValue{"v2"}, val)
+	assert.Equal(t, "v2", val.String())
 
 	exists, err := c.HEXISTS("k1", "f2")
 	assert.NoError(t, err)
@@ -27,11 +26,12 @@ func TestBasicHashes(t *testing.T) {
 
 	val, err = c.HGET("nosuchkey", "no such field")
 	assert.NoError(t, err)
-	assert.Nil(t, val)
+	assert.True(t, val.Empty())
 
 	keyValues, err := c.HGETALL("k1")
 	assert.NoError(t, err)
-	assert.Equal(t, map[string]Value{"f1": StringValue{"v1"}, "f2": StringValue{"v2"}}, keyValues)
+	assert.Len(t, keyValues, 2)
+	assert.Equal(t, map[string]ReturnValue{"f1": {StringValue{"v1"}.ToAV()}, "f2": {StringValue{"v2"}.ToAV()}}, keyValues)
 
 	keys, err := c.HKEYS("k1")
 	assert.NoError(t, err)
@@ -39,7 +39,7 @@ func TestBasicHashes(t *testing.T) {
 
 	vals, err := c.HVALS("k1")
 	assert.NoError(t, err)
-	assert.ElementsMatch(t, []Value{StringValue{"v1"}, StringValue{"v2"}}, vals)
+	assert.ElementsMatch(t, []ReturnValue{{StringValue{"v1"}.ToAV()}, {StringValue{"v2"}.ToAV()}}, vals)
 
 	count, err := c.HLEN("k1")
 	assert.NoError(t, err)
@@ -50,11 +50,11 @@ func TestBasicHashes(t *testing.T) {
 
 	val, err = c.HGET("k1", "f2")
 	assert.NoError(t, err)
-	assert.Nil(t, val)
+	assert.True(t, val.Empty())
 
 	val, err = c.HGET("k1", "f1")
 	assert.NoError(t, err)
-	assert.Nil(t, val)
+	assert.True(t, val.Empty())
 
 	exists, err = c.HEXISTS("k1", "f1")
 	assert.NoError(t, err)
@@ -80,15 +80,16 @@ func TestAtomicHashOps(t *testing.T) {
 
 	val, err := c.HGET("k1", "f1")
 	assert.NoError(t, err)
-	assert.Equal(t, StringValue{"v1"}, val)
+	assert.Equal(t, "v1", val.String())
 
 	val, err = c.HGET("k1", "f2")
 	assert.NoError(t, err)
-	assert.Equal(t, StringValue{"v2"}, val)
+	assert.Equal(t, "v2", val.String())
 
 	values, err := c.HMGET("k1", "f1", "f2")
 	assert.NoError(t, err)
-	assert.Equal(t, []Value{StringValue{"v1"}, StringValue{"v2"}}, values)
+	assert.Len(t, values, 2)
+	assert.Equal(t, []string{"v1", "v2"}, []string{values[0].String(), values[1].String()})
 
 	ok, err := c.HSETNX("k1", "f1", StringValue{"v1"})
 	assert.NoError(t, err)
@@ -100,42 +101,33 @@ func TestAtomicHashOps(t *testing.T) {
 
 	val, err = c.HGET("k1", "f9")
 	assert.NoError(t, err)
-	assert.Equal(t, StringValue{"v9"}, val)
+	assert.Equal(t, "v9", val.String())
 }
 
 func TestHashCounters(t *testing.T) {
 	c := newClient(t)
 
-	after, err := c.HINCRBYFLOAT("k1", "f1", big.NewFloat(3.14))
+	after, err := c.HINCRBYFLOAT("k1", "f1", 3.14)
 	assert.NoError(t, err)
+	assert.InDelta(t, 3.14, after, 0.001)
 
-	f, _ := after.Float64()
-	assert.InDelta(t, 3.14, f, 0.001)
-
-	after, err = c.HINCRBYFLOAT("k1", "f1", big.NewFloat(-1.618))
+	after, err = c.HINCRBYFLOAT("k1", "f1", -1.618)
 	assert.NoError(t, err)
+	assert.InDelta(t, 1.522, after, 0.001)
 
-	f, _ = after.Float64()
-	assert.InDelta(t, 1.522, f, 0.001)
-
-	afterInt, err := c.HINCRBY("k1", "f1", big.NewInt(42))
+	afterInt, err := c.HINCRBY("k1", "f1", 42)
 	assert.NoError(t, err)
-	assert.Equal(t, int64(43), afterInt.Int64())
+	assert.Equal(t, int64(43), afterInt)
 
-	afterInt, err = c.HINCRBY("k1", "f1", big.NewInt(-13))
+	afterInt, err = c.HINCRBY("k1", "f1", -13)
 	assert.NoError(t, err)
-	assert.Equal(t, int64(30), afterInt.Int64())
+	assert.Equal(t, int64(30), afterInt)
 
-	afterInt, err = c.HINCRBY("k1", "f2", big.NewInt(42))
+	afterInt, err = c.HINCRBY("k1", "f2", 42)
 	assert.NoError(t, err)
-	assert.Equal(t, int64(42), afterInt.Int64())
+	assert.Equal(t, int64(42), afterInt)
 
 	v, err := c.HGET("k1", "f2")
 	assert.NoError(t, err)
-
-	nval, ok := v.AsNumeric()
-	assert.True(t, ok)
-
-	n, _ := nval.Int64()
-	assert.Equal(t, n, int64(42))
+	assert.Equal(t, int64(42), v.Int())
 }

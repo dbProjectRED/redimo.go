@@ -8,7 +8,7 @@ import (
 )
 
 func TestPointsAndDistances(t *testing.T) {
-	l := Location{
+	l := GLocation{
 		Lat: 38.115556,
 		Lon: 13.361389,
 	}
@@ -21,7 +21,7 @@ func TestPointsAndDistances(t *testing.T) {
 
 func TestGeoBasics(t *testing.T) {
 	c := newClient(t)
-	startingMap := map[string]Location{
+	startingMap := map[string]GLocation{
 		"Palermo": {38.115556, 13.361389},
 		"Catania": {37.502669, 15.087269},
 	}
@@ -63,7 +63,7 @@ func TestGeoBasics(t *testing.T) {
 
 func TestGeoRadius(t *testing.T) {
 	c := newClient(t)
-	_, err := c.GEOADD("india", map[string]Location{
+	_, err := c.GEOADD("india", map[string]GLocation{
 		"chennai":    {13.09, 80.28},
 		"vellore":    {12.9204, 79.15},
 		"pondy":      {11.935, 79.83},
@@ -73,7 +73,7 @@ func TestGeoRadius(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	locations, err := c.GEORADIUS("india", Location{13.09, 80.28}, 180, Kilometers, 10)
+	locations, err := c.GEORADIUS("india", GLocation{13.09, 80.28}, 180, Kilometers, 10)
 	assert.NoError(t, err)
 	assert.Equal(t, 3, len(locations))
 	assert.InDelta(t, locations["chennai"].Lat, 13.09, 0.1)

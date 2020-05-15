@@ -2,14 +2,14 @@ package redimo
 
 import (
 	"context"
-	"math/big"
+	"log"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
-func (c Client) HGET(key string, field string) (val Value, err error) {
+func (c Client) HGET(key string, field string) (val ReturnValue, err error) {
 	resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
 		ConsistentRead: aws.Bool(c.consistentReads),
 		Key: keyDef{
@@ -34,7 +34,7 @@ func (c Client) HSET(key string, fieldValues map[string]Value) (savedCount int64
 			PutRequest: &dynamodb.PutRequest{
 				Item: itemDef{
 					keyDef: keyDef{pk: key, sk: field},
-					val:    v,
+					val:    ReturnValue{v.ToAV()},
 				}.eav(),
 			},
 		})
@@ -90,7 +90,7 @@ func (c Client) HMSET(key string, fieldValues map[string]Value) (err error) {
 	return
 }
 
-func (c Client) HMGET(key string, fields ...string) (values []Value, err error) {
+func (c Client) HMGET(key string, fields ...string) (values []ReturnValue, err error) {
 	items := make([]dynamodb.TransactGetItem, len(fields))
 	for i, field := range fields {
 		items[i] = dynamodb.TransactGetItem{Get: &dynamodb.Get{
@@ -162,8 +162,8 @@ func (c Client) HEXISTS(key string, field string) (exists bool, err error) {
 	return
 }
 
-func (c Client) HGETALL(key string) (fieldValues map[string]Value, err error) {
-	fieldValues = make(map[string]Value)
+func (c Client) HGETALL(key string) (fieldValues map[string]ReturnValue, err error) {
+	fieldValues = make(map[string]ReturnValue)
 	hasMoreResults := true
 
 	var lastEvaluatedKey map[string]dynamodb.AttributeValue
@@ -200,13 +200,22 @@ func (c Client) HGETALL(key string) (fieldValues map[string]Value, err error) {
 	return
 }
 
-func (c Client) HINCRBYFLOAT(key string, field string, delta *big.Float) (after *big.Float, err error) {
+func (c Client) HINCRBYFLOAT(key string, field string, delta float64) (after float64, err error) {
+	rv, err := c.hIncr(key, field, FloatValue{delta})
+	if err == nil {
+		after = rv.Float()
+	}
+
+	return
+}
+
+func (c Client) hIncr(key string, field string, delta Value) (after ReturnValue, err error) {
 	builder := newExpresionBuilder()
 	builder.keys[vk] = struct{}{}
 	resp, err := c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
 		ExpressionAttributeNames: builder.expressionAttributeNames(),
 		ExpressionAttributeValues: map[string]dynamodb.AttributeValue{
-			":delta": NumericValue{delta}.toAV(),
+			":delta": delta.ToAV(),
 		},
 		Key:              keyDef{pk: key, sk: field}.toAV(),
 		ReturnValues:     dynamodb.ReturnValueAllNew,
@@ -215,19 +224,19 @@ func (c Client) HINCRBYFLOAT(key string, field string, delta *big.Float) (after 
 	}).Send(context.TODO())
 
 	if err == nil {
-		after, _ = parseItem(resp.UpdateItemOutput.Attributes).val.AsNumeric()
+		after = ReturnValue{resp.UpdateItemOutput.Attributes[vk]}
 	}
 
 	return
 }
 
-func (c Client) HINCRBY(key string, field string, delta *big.Int) (after *big.Int, err error) {
-	afterFloat, err := c.HINCRBYFLOAT(key, field, new(big.Float).SetInt(delta))
-	if err != nil {
-		return
-	}
+func (c Client) HINCRBY(key string, field string, delta int64) (after int64, err error) {
+	rv, err := c.hIncr(key, field, IntValue{delta})
+	log.Println(aws.StringValue(rv.AV.N))
 
-	after, _ = afterFloat.Int(nil)
+	if err == nil {
+		after = rv.Int()
+	}
 
 	return
 }
@@ -271,7 +280,7 @@ func (c Client) HKEYS(key string) (keys []string, err error) {
 	return
 }
 
-func (c Client) HVALS(key string) (values []Value, err error) {
+func (c Client) HVALS(key string) (values []ReturnValue, err error) {
 	all, err := c.HGETALL(key)
 	if err == nil {
 		for _, v := range all {

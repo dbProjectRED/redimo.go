@@ -2,7 +2,6 @@ package redimo
 
 import (
 	"context"
-	"math/big"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -10,7 +9,7 @@ import (
 
 const emptySK = "/"
 
-func (c Client) GET(key string) (val Value, err error) {
+func (c Client) GET(key string) (val ReturnValue, err error) {
 	resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
 		ConsistentRead: aws.Bool(c.consistentReads),
 		Key:            keyDef{pk: key, sk: emptySK}.toAV(),
@@ -20,7 +19,7 @@ func (c Client) GET(key string) (val Value, err error) {
 		return
 	}
 
-	val = parseItem(resp.Item).val
+	val = ReturnValue{resp.Item[vk]}
 
 	return
 }
@@ -64,7 +63,7 @@ func (c Client) SETNX(key string, value Value) (ok bool, err error) {
 	return c.SET(key, value, Flags{IfNotExists})
 }
 
-func (c Client) GETSET(key string, value Value) (oldValue Value, err error) {
+func (c Client) GETSET(key string, value Value) (oldValue ReturnValue, err error) {
 	builder := newExpresionBuilder()
 	builder.updateSET(vk, value)
 
@@ -90,9 +89,9 @@ func (c Client) GETSET(key string, value Value) (oldValue Value, err error) {
 	return
 }
 
-func (c Client) MGET(keys ...string) (outputs []Value, err error) {
+func (c Client) MGET(keys ...string) (outputs []ReturnValue, err error) {
 	inputRequests := make([]dynamodb.TransactGetItem, len(keys))
-	outputs = make([]Value, len(keys))
+	outputs = make([]ReturnValue, len(keys))
 
 	for i, key := range keys {
 		inputRequests[i] = dynamodb.TransactGetItem{
@@ -119,7 +118,7 @@ func (c Client) MGET(keys ...string) (outputs []Value, err error) {
 		if len(out.Item) > 0 {
 			outputs[i] = parseItem(out.Item).val
 		} else {
-			outputs[i] = nil
+			outputs[i] = ReturnValue{}
 		}
 	}
 
@@ -127,15 +126,15 @@ func (c Client) MGET(keys ...string) (outputs []Value, err error) {
 }
 
 func (c Client) MSET(data map[string]Value) (err error) {
-	_, err = c._mset(data, Flags{})
+	_, err = c.mset(data, Flags{})
 	return
 }
 
 func (c Client) MSETNX(data map[string]Value) (ok bool, err error) {
-	return c._mset(data, Flags{IfNotExists})
+	return c.mset(data, Flags{IfNotExists})
 }
 
-func (c Client) _mset(data map[string]Value, flags Flags) (ok bool, err error) {
+func (c Client) mset(data map[string]Value, flags Flags) (ok bool, err error) {
 	inputs := make([]dynamodb.TransactWriteItem, 0, len(data))
 
 	for k, v := range data {
@@ -178,13 +177,22 @@ func (c Client) _mset(data map[string]Value, flags Flags) (ok bool, err error) {
 	return true, nil
 }
 
-func (c Client) INCRBYFLOAT(key string, delta *big.Float) (after *big.Float, err error) {
+func (c Client) INCRBYFLOAT(key string, delta float64) (after float64, err error) {
+	rv, err := c.incr(key, FloatValue{delta})
+	if err == nil {
+		after = rv.Float()
+	}
+
+	return
+}
+
+func (c Client) incr(key string, value Value) (newValue ReturnValue, err error) {
 	builder := newExpresionBuilder()
 	builder.keys[vk] = struct{}{}
 	resp, err := c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
 		ExpressionAttributeNames: builder.expressionAttributeNames(),
 		ExpressionAttributeValues: map[string]dynamodb.AttributeValue{
-			":delta": NumericValue{delta}.toAV(),
+			":delta": value.ToAV(),
 		},
 		Key:              keyDef{pk: key, sk: emptySK}.toAV(),
 		ReturnValues:     dynamodb.ReturnValueAllNew,
@@ -193,33 +201,29 @@ func (c Client) INCRBYFLOAT(key string, delta *big.Float) (after *big.Float, err
 	}).Send(context.TODO())
 
 	if err == nil {
-		after, _ = parseItem(resp.UpdateItemOutput.Attributes).val.AsNumeric()
+		newValue = ReturnValue{resp.UpdateItemOutput.Attributes[vk]}
 	}
 
 	return
 }
 
-func (c Client) _incrByInt(key string, delta *big.Int) (after *big.Int, err error) {
-	floatAfter, err := c.INCRBYFLOAT(key, new(big.Float).SetInt(delta))
+func (c Client) INCR(key string) (after int64, err error) {
+	return c.INCRBY(key, 1)
+}
+
+func (c Client) DECR(key string) (after int64, err error) {
+	return c.INCRBY(key, -1)
+}
+
+func (c Client) INCRBY(key string, delta int64) (after int64, err error) {
+	rv, err := c.incr(key, IntValue{delta})
 	if err == nil {
-		after, _ = floatAfter.Int(nil)
+		after = rv.Int()
 	}
 
 	return
 }
 
-func (c Client) INCR(key string) (after *big.Int, err error) {
-	return c._incrByInt(key, big.NewInt(1))
-}
-
-func (c Client) DECR(key string) (after *big.Int, err error) {
-	return c._incrByInt(key, big.NewInt(-1))
-}
-
-func (c Client) INCRBY(key string, delta *big.Int) (after *big.Int, err error) {
-	return c._incrByInt(key, delta)
-}
-
-func (c Client) DECRBY(key string, delta *big.Int) (after *big.Int, err error) {
-	return c._incrByInt(key, new(big.Int).Neg(delta))
+func (c Client) DECRBY(key string, delta int64) (after int64, err error) {
+	return c.INCRBY(key, -delta)
 }

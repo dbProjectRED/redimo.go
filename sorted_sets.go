@@ -39,11 +39,29 @@ var accumulators = map[ZAggregation]func(float64, float64) float64{
 	},
 }
 
-func zScoreToAv(score float64) (av dynamodb.AttributeValue) {
-	if math.IsInf(score, +1) || math.IsInf(score, -1) {
+type zScore struct {
+	score float64
+}
+
+func (zs zScore) ToAV() (av dynamodb.AttributeValue) {
+	if math.IsInf(zs.score, +1) || math.IsInf(zs.score, -1) {
 		// do nothing. Infinities cannot current be represented, and range queries will ignore empty AVs.
 	} else {
-		av.N = aws.String(strconv.FormatFloat(score, 'G', 17, 64))
+		av.N = aws.String(strconv.FormatFloat(zs.score, 'G', 17, 64))
+	}
+
+	return
+}
+
+type zLex struct {
+	lex string
+}
+
+func (zl zLex) ToAV() (av dynamodb.AttributeValue) {
+	if zl.lex == "" {
+		// do nothing. Empty strings cannot be represented, and range queries will ignore empty AVs.
+	} else {
+		av.S = aws.String(zl.lex)
 	}
 
 	return
@@ -57,7 +75,7 @@ func zScoreFromAV(av dynamodb.AttributeValue) float64 {
 func (c Client) ZADD(key string, membersWithScores map[string]float64, flags Flags) (addedCount int64, err error) {
 	for member, score := range membersWithScores {
 		builder := newExpresionBuilder()
-		builder.updateSetAV(skScore, zScoreToAv(score))
+		builder.updateSetAV(skScore, zScore{score}.ToAV())
 
 		if flags.has(IfNotExists) {
 			builder.addConditionNotExists(pk)
@@ -96,22 +114,10 @@ func (c Client) ZCARD(key string) (count int64, err error) {
 }
 
 func (c Client) ZCOUNT(key string, minScore, maxScore float64) (count int64, err error) {
-	return c.zGeneralCount(key, AV{zScoreToAv(minScore)}, AV{zScoreToAv(maxScore)}, skScore)
+	return c.zGeneralCount(key, ReturnValue{zScore{minScore}.ToAV()}, ReturnValue{zScore{maxScore}.ToAV()}, skScore)
 }
 
-type AV struct {
-	av dynamodb.AttributeValue
-}
-
-func (av AV) Empty() bool {
-	return aws.StringValue(av.av.S) == "" && aws.StringValue(av.av.N) == ""
-}
-
-func (av AV) Present() bool {
-	return !av.Empty()
-}
-
-func (c Client) zGeneralCount(key string, min AV, max AV, attribute string) (count int64, err error) {
+func (c Client) zGeneralCount(key string, min ReturnValue, max ReturnValue, attribute string) (count int64, err error) {
 	builder := newExpresionBuilder()
 	builder.addConditionEquality(pk, StringValue{key})
 
@@ -122,7 +128,7 @@ func (c Client) zGeneralCount(key string, min AV, max AV, attribute string) (cou
 	}
 
 	if min.Present() {
-		builder.values["min"] = min.av
+		builder.values["min"] = min.AV
 
 		if !betweenRange {
 			builder.condition(fmt.Sprintf("#%v >= :min", attribute), attribute)
@@ -130,7 +136,7 @@ func (c Client) zGeneralCount(key string, min AV, max AV, attribute string) (cou
 	}
 
 	if max.Present() {
-		builder.values["max"] = max.av
+		builder.values["max"] = max.AV
 
 		if !betweenRange {
 			builder.condition(fmt.Sprintf("#%v <= :max", attribute), attribute)
@@ -172,7 +178,7 @@ func (c Client) zGeneralCount(key string, min AV, max AV, attribute string) (cou
 func (c Client) ZINCRBY(key string, member string, delta float64) (newScore float64, err error) {
 	builder := newExpresionBuilder()
 	builder.keys[skScore] = struct{}{}
-	builder.values["delta"] = zScoreToAv(delta)
+	builder.values["delta"] = zScore{delta}.ToAV()
 
 	resp, err := c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
 		ConditionExpression:       builder.conditionExpression(),
@@ -205,7 +211,7 @@ func (c Client) ZINTERSTORE(destinationKey string, sourceKeys []string, aggregat
 }
 
 func (c Client) ZLEXCOUNT(key string, min string, max string) (count int64, err error) {
-	return c.zGeneralCount(key, AV{StringValue{min}.toAV()}, AV{StringValue{max}.toAV()}, sk)
+	return c.zGeneralCount(key, ReturnValue{StringValue{min}.ToAV()}, ReturnValue{StringValue{max}.ToAV()}, sk)
 }
 
 func (c Client) ZPOPMAX(key string, count int64) (membersWithScores map[string]float64, err error) {
@@ -217,7 +223,7 @@ func (c Client) ZPOPMIN(key string, count int64) (membersWithScores map[string]f
 }
 
 func (c Client) zPop(key string, count int64, forward bool) (membersWithScores map[string]float64, err error) {
-	membersWithScores, err = c.zGeneralRange(key, AV{}, AV{}, 0, count, forward, skScore)
+	membersWithScores, err = c.zGeneralRange(key, ReturnValue{}, ReturnValue{}, 0, count, forward, skScore)
 	if err != nil {
 		return
 	}
@@ -237,22 +243,24 @@ func (c Client) zPop(key string, count int64, forward bool) (membersWithScores m
 	return
 }
 
+type AV = ReturnValue
+
 func (c Client) ZRANGE(key string, start, stop int64) (membersWithScores map[string]float64, err error) {
 	return c.zRange(key, start, stop, true)
 }
 
 func (c Client) zRange(key string, start int64, stop int64, forward bool) (membersWithScores map[string]float64, err error) {
 	if start < 0 && stop < 0 {
-		return c.zGeneralRange(key, AV{}, AV{}, -stop-1, -start, !forward, skScore)
+		return c.zGeneralRange(key, ReturnValue{}, ReturnValue{}, -stop-1, -start, !forward, skScore)
 	}
 
 	if start > 0 && stop < 0 {
-		lastScore, err := c.zGeneralRange(key, AV{}, AV{}, -stop-1, 1, !forward, skScore)
+		lastScore, err := c.zGeneralRange(key, ReturnValue{}, ReturnValue{}, -stop-1, 1, !forward, skScore)
 		if err != nil {
 			return membersWithScores, err
 		}
 
-		return c.zGeneralRange(key, AV{}, AV{zScoreToAv(floatValues(lastScore)[0])}, start, 0, forward, skScore)
+		return c.zGeneralRange(key, ReturnValue{}, ReturnValue{zScore{floatValues(lastScore)[0]}.ToAV()}, start, 0, forward, skScore)
 	}
 
 	return c.zGeneralRange(key, AV{}, AV{}, start, stop-start+1, forward, skScore)
@@ -267,15 +275,15 @@ func floatValues(floatValuedMap map[string]float64) (values []float64) {
 }
 
 func (c Client) ZRANGEBYLEX(key string, min, max string, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return c.zGeneralRange(key, AV{StringValue{min}.toAV()}, AV{StringValue{max}.toAV()}, offset, count, true, sk)
+	return c.zGeneralRange(key, AV{StringValue{min}.ToAV()}, AV{StringValue{max}.ToAV()}, offset, count, true, sk)
 }
 
 func (c Client) ZRANGEBYSCORE(key string, min, max float64, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return c.zGeneralRange(key, AV{zScoreToAv(min)}, AV{zScoreToAv(max)}, offset, count, true, skScore)
+	return c.zGeneralRange(key, AV{zScore{min}.ToAV()}, AV{zScore{max}.ToAV()}, offset, count, true, skScore)
 }
 
 func (c Client) zGeneralRange(key string,
-	start AV, stop AV,
+	start ReturnValue, stop ReturnValue,
 	offset int64, count int64,
 	forward bool, attribute string) (membersWithScores map[string]float64, err error) {
 	membersWithScores = make(map[string]float64)
@@ -295,11 +303,11 @@ func (c Client) zGeneralRange(key string,
 		builder.addConditionEquality(pk, StringValue{key})
 
 		if !start.Empty() {
-			builder.values["start"] = start.av
+			builder.values["start"] = start.AV
 		}
 
 		if !stop.Empty() {
-			builder.values["stop"] = stop.av
+			builder.values["stop"] = stop.AV
 		}
 
 		switch {
@@ -358,9 +366,9 @@ func (c Client) zRank(key string, member string, forward bool) (rank int64, ok b
 	var count int64
 
 	if forward {
-		count, err = c.zGeneralCount(key, AV{}, AV{zScoreToAv(score)}, skScore)
+		count, err = c.zGeneralCount(key, AV{}, AV{zScore{score}.ToAV()}, skScore)
 	} else {
-		count, err = c.zGeneralCount(key, AV{zScoreToAv(score)}, AV{}, skScore)
+		count, err = c.zGeneralCount(key, AV{zScore{score}.ToAV()}, AV{}, skScore)
 	}
 
 	if err == nil {
@@ -439,11 +447,11 @@ func (c Client) ZREVRANGE(key string, start, stop int64) (membersWithScores map[
 }
 
 func (c Client) ZREVRANGEBYLEX(key string, max, min string, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return c.zGeneralRange(key, AV{StringValue{min}.toAV()}, AV{StringValue{max}.toAV()}, offset, count, false, sk)
+	return c.zGeneralRange(key, AV{zLex{min}.ToAV()}, AV{zLex{max}.ToAV()}, offset, count, false, sk)
 }
 
 func (c Client) ZREVRANGEBYSCORE(key string, max, min float64, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return c.zGeneralRange(key, AV{zScoreToAv(min)}, AV{zScoreToAv(max)}, offset, count, false, skScore)
+	return c.zGeneralRange(key, AV{zScore{min}.ToAV()}, AV{zScore{max}.ToAV()}, offset, count, false, skScore)
 }
 
 func (c Client) ZREVRANK(key string, member string) (rank int64, ok bool, err error) {
