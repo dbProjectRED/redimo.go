@@ -7,31 +7,20 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
-func (c Client) SADD(key string, members ...string) (err error) {
-	writeItems := make([]dynamodb.WriteRequest, len(members))
-	for i, member := range members {
-		writeItems[i] = dynamodb.WriteRequest{
-			PutRequest: &dynamodb.PutRequest{
-				Item: keyDef{
-					pk: key,
-					sk: member,
-				}.toAV(),
-			},
-		}
-	}
-
-	requestMap := map[string][]dynamodb.WriteRequest{}
-	requestMap[c.table] = writeItems
-
-	for len(requestMap) > 0 {
-		resp, err := c.ddbClient.BatchWriteItemRequest(&dynamodb.BatchWriteItemInput{
-			RequestItems: requestMap,
+func (c Client) SADD(key string, members ...string) (addedCount int64, err error) {
+	for _, member := range members {
+		resp, err := c.ddbClient.PutItemRequest(&dynamodb.PutItemInput{
+			Item:         keyDef{pk: key, sk: member}.toAV(),
+			ReturnValues: dynamodb.ReturnValueAllOld,
+			TableName:    aws.String(c.table),
 		}).Send(context.TODO())
 		if err != nil {
-			return err
+			return addedCount, err
 		}
 
-		requestMap = resp.UnprocessedItems
+		if len(resp.Attributes) == 0 {
+			addedCount++
+		}
 	}
 
 	return
@@ -74,7 +63,7 @@ func (c Client) SDIFF(key string, subtractKeys ...string) (members []string, err
 func (c Client) SDIFFSTORE(destinationKey string, sourceKey string, subtractKeys ...string) (count int64, err error) {
 	members, err := c.SDIFF(sourceKey, subtractKeys...)
 	if err == nil {
-		err = c.SADD(destinationKey, members...)
+		_, err = c.SADD(destinationKey, members...)
 	}
 
 	return int64(len(members)), err
@@ -121,7 +110,7 @@ func (c Client) SINTER(key string, otherKeys ...string) (members []string, err e
 func (c Client) SINTERSTORE(destinationKey string, sourceKey string, otherKeys ...string) (count int64, err error) {
 	members, err := c.SINTER(sourceKey, otherKeys...)
 	if err == nil {
-		err = c.SADD(destinationKey, members...)
+		_, err = c.SADD(destinationKey, members...)
 	}
 
 	return int64(len(members)), err
@@ -304,7 +293,7 @@ func (c Client) SUNION(keys ...string) (members []string, err error) {
 func (c Client) SUNIONSTORE(destinationKey string, sourceKeys ...string) (count int64, err error) {
 	members, err := c.SUNION(sourceKeys...)
 	if err == nil {
-		err = c.SADD(destinationKey, members...)
+		_, err = c.SADD(destinationKey, members...)
 	}
 
 	return int64(len(members)), err

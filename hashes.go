@@ -92,6 +92,7 @@ func (c Client) HMSET(key string, fieldValues map[string]Value) (err error) {
 func (c Client) HMGET(key string, fields ...string) (values map[string]ReturnValue, err error) {
 	values = make(map[string]ReturnValue)
 	items := make([]dynamodb.TransactGetItem, len(fields))
+
 	for i, field := range fields {
 		items[i] = dynamodb.TransactGetItem{Get: &dynamodb.Get{
 			Key: keyDef{
@@ -130,6 +131,7 @@ func (c Client) HDEL(key string, fields ...string) (deletedCount int64, err erro
 		if err != nil {
 			return deletedCount, err
 		}
+
 		if len(resp.Attributes) > 0 {
 			deletedCount++
 		}

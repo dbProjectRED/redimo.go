@@ -9,8 +9,9 @@ import (
 func TestBasicSets(t *testing.T) {
 	c := newClient(t)
 
-	err := c.SADD("s1", "m1", "m2", "m3")
+	addedCount, err := c.SADD("s1", "m1", "m2", "m3")
 	assert.NoError(t, err)
+	assert.Equal(t, int64(3), addedCount)
 
 	ok, err := c.SISMEMBER("s1", "m1")
 	assert.NoError(t, err)
@@ -55,13 +56,13 @@ func TestBasicSets(t *testing.T) {
 func TestSetOperations(t *testing.T) {
 	c := newClient(t)
 
-	err := c.SADD("s1", "m1", "m2", "m3")
+	_, err := c.SADD("s1", "m1", "m2", "m3")
 	assert.NoError(t, err)
 
-	err = c.SADD("s2", "m3", "m4", "m5")
+	_, err = c.SADD("s2", "m3", "m4", "m5")
 	assert.NoError(t, err)
 
-	err = c.SADD("s3", "m5", "m6", "m7")
+	_, err = c.SADD("s3", "m5", "m6", "m7")
 	assert.NoError(t, err)
 
 	union, err := c.SUNION("s1", "s2", "s3")
@@ -116,7 +117,7 @@ func TestSetOperations(t *testing.T) {
 func TestSetModifiers(t *testing.T) {
 	c := newClient(t)
 
-	err := c.SADD("s1", "m1", "m2", "m3")
+	_, err := c.SADD("s1", "m1", "m2", "m3")
 	assert.NoError(t, err)
 
 	members, err := c.SRANDMEMBER("s1", 1)
@@ -138,7 +139,7 @@ func TestSetModifiers(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), newCount)
 
-	err = c.SADD("s1", "m1", "m2", "m3")
+	_, err = c.SADD("s1", "m1", "m2", "m3")
 	assert.NoError(t, err)
 
 	ok, err := c.SMOVE("s1", "s2", "m1")
