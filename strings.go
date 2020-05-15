@@ -9,7 +9,7 @@ import (
 
 const emptySK = "/"
 
-func (c Client) GET(key string) (val ReturnValue, err error) {
+func (c Client) GET(key string) (val ReturnValue, found bool, err error) {
 	resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
 		ConsistentRead: aws.Bool(c.consistentReads),
 		Key:            keyDef{pk: key, sk: emptySK}.toAV(),
@@ -20,6 +20,7 @@ func (c Client) GET(key string) (val ReturnValue, err error) {
 	}
 
 	val = ReturnValue{resp.Item[vk]}
+	found = true
 
 	return
 }
@@ -63,7 +64,7 @@ func (c Client) SETNX(key string, value Value) (ok bool, err error) {
 	return c.SET(key, value, Flags{IfNotExists})
 }
 
-func (c Client) GETSET(key string, value Value) (oldValue ReturnValue, err error) {
+func (c Client) GETSET(key string, value Value) (oldValue ReturnValue, found bool, err error) {
 	builder := newExpresionBuilder()
 	builder.updateSET(vk, value)
 
@@ -85,6 +86,7 @@ func (c Client) GETSET(key string, value Value) (oldValue ReturnValue, err error
 	}
 
 	oldValue = parseItem(resp.Attributes).val
+	found = true
 
 	return
 }

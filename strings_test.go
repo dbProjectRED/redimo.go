@@ -8,17 +8,17 @@ import (
 
 func TestBasic(t *testing.T) {
 	c := newClient(t)
-	val, err := c.GET("hello")
+	val, found, err := c.GET("hello")
 	assert.NoError(t, err)
-	assert.True(t, val.Empty())
+	assert.False(t, found)
 
 	ok, err := c.SET("hello", StringValue{"world"}, Flags{})
 	assert.NoError(t, err)
 	assert.True(t, ok)
 
-	val, err = c.GET("hello")
+	val, found, err = c.GET("hello")
 	assert.NoError(t, err)
-	assert.NotNil(t, val)
+	assert.True(t, found)
 	assert.Equal(t, "world", val.String())
 
 	ok, err = c.SETNX("hello", IntValue{42})
@@ -29,9 +29,9 @@ func TestBasic(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, ok)
 
-	val, err = c.GET("hola")
+	val, found, err = c.GET("hola")
 	assert.NoError(t, err)
-	assert.NotNil(t, val)
+	assert.True(t, found)
 	assert.Equal(t, int64(42), val.Int())
 
 	ok, err = c.SET("howdy", StringValue{"partner"}, Flags{IfAlreadyExists})
@@ -42,24 +42,25 @@ func TestBasic(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, ok)
 
-	val, err = c.GET("hola")
+	val, found, err = c.GET("hola")
 	assert.NoError(t, err)
-	assert.NotNil(t, val)
+	assert.True(t, found)
 	assert.Equal(t, "mundo", val.String())
 }
 
 func TestGETSET(t *testing.T) {
 	c := newClient(t)
-	oldValue, err := c.GETSET("hello", StringValue{"world"})
+	oldValue, found, err := c.GETSET("hello", StringValue{"world"})
 	assert.NoError(t, err)
+	assert.False(t, found)
 	assert.True(t, oldValue.Empty())
 
-	oldValue, err = c.GETSET("hello", StringValue{"mundo"})
+	oldValue, found, err = c.GETSET("hello", StringValue{"mundo"})
 	assert.NoError(t, err)
-	assert.NotNil(t, oldValue)
+	assert.True(t, found)
 	assert.Equal(t, "world", oldValue.String())
 
-	val, _ := c.GET("hello")
+	val, _, _ := c.GET("hello")
 	assert.Equal(t, "mundo", val.String())
 }
 
@@ -89,7 +90,7 @@ func TestCounters(t *testing.T) {
 	assert.NoError(t, err)
 	assert.InDelta(t, 20, num, 0.01)
 
-	v, err := c.GET("count")
+	v, _, err := c.GET("count")
 	assert.NoError(t, err)
 	assert.InDelta(t, 20, v.Float(), 0.001)
 }
@@ -109,7 +110,7 @@ func TestAtomicOps(t *testing.T) {
 	err = c.MSET(map[string]Value{"k3": StringValue{"v3.1"}, "k4": StringValue{"v4"}})
 	assert.NoError(t, err)
 
-	v, err := c.GET("k3")
+	v, _, err := c.GET("k3")
 	assert.NoError(t, err)
 	assert.Equal(t, "v3.1", v.String())
 
