@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"math/big"
 	"strconv"
 	"strings"
 
@@ -41,7 +40,11 @@ var accumulators = map[ZAggregation]func(float64, float64) float64{
 }
 
 func zScoreToAv(score float64) (av dynamodb.AttributeValue) {
-	av.N = aws.String(strconv.FormatFloat(score, 'G', 17, 64))
+	if math.IsInf(score, +1) || math.IsInf(score, -1) {
+		// do nothing. Infinities cannot current be represented, and range queries will ignore empty AVs.
+	} else {
+		av.N = aws.String(strconv.FormatFloat(score, 'G', 17, 64))
+	}
 	return
 }
 
@@ -53,7 +56,7 @@ func zScoreFromAV(av dynamodb.AttributeValue) float64 {
 func (c Client) ZADD(key string, membersWithScores map[string]float64, flags Flags) (addedCount int64, err error) {
 	for member, score := range membersWithScores {
 		builder := newExpresionBuilder()
-		builder.updateSET(sk2, StringValue{floatToLex(big.NewFloat(score))})
+		builder.updateSetAV(skScore, zScoreToAv(score))
 
 		if flags.has(IfNotExists) {
 			builder.addConditionNotExists(pk)
@@ -92,29 +95,41 @@ func (c Client) ZCARD(key string) (count int64, err error) {
 }
 
 func (c Client) ZCOUNT(key string, minScore, maxScore float64) (count int64, err error) {
-	return c.zGeneralCount(key, floatToLex(big.NewFloat(minScore)), floatToLex(big.NewFloat(maxScore)), sk2)
+	return c.zGeneralCount(key, AV{zScoreToAv(minScore)}, AV{zScoreToAv(maxScore)}, skScore)
 }
 
-func (c Client) zGeneralCount(key string, min string, max string, attribute string) (count int64, err error) {
+type AV struct {
+	av dynamodb.AttributeValue
+}
+
+func (av AV) Empty() bool {
+	return aws.StringValue(av.av.S) == "" && aws.StringValue(av.av.N) == ""
+}
+
+func (av AV) Present() bool {
+	return !av.Empty()
+}
+
+func (c Client) zGeneralCount(key string, min AV, max AV, attribute string) (count int64, err error) {
 	builder := newExpresionBuilder()
 	builder.addConditionEquality(pk, StringValue{key})
 
-	betweenRange := min != "" && max != ""
+	betweenRange := min.Present() && max.Present()
 
 	if betweenRange {
 		builder.condition(fmt.Sprintf("#%v BETWEEN :min AND :max", attribute), attribute)
 	}
 
-	if min != "" {
-		builder.values["min"] = StringValue{min}.toAV()
+	if min.Present() {
+		builder.values["min"] = min.av
 
 		if !betweenRange {
 			builder.condition(fmt.Sprintf("#%v >= :min", attribute), attribute)
 		}
 	}
 
-	if max != "" {
-		builder.values["max"] = StringValue{max}.toAV()
+	if max.Present() {
+		builder.values["max"] = max.av
 
 		if !betweenRange {
 			builder.condition(fmt.Sprintf("#%v <= :max", attribute), attribute)
@@ -125,18 +140,13 @@ func (c Client) zGeneralCount(key string, min string, max string, attribute stri
 
 	var lastEvaluatedKey map[string]dynamodb.AttributeValue
 
-	var indexName *string
-	if attribute == sk2 {
-		indexName = aws.String("lsi_sk2")
-	}
-
 	for hasMoreResults {
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 			ConsistentRead:            aws.Bool(c.consistentReads),
 			ExclusiveStartKey:         lastEvaluatedKey,
 			ExpressionAttributeNames:  builder.expressionAttributeNames(),
 			ExpressionAttributeValues: builder.expressionAttributeValues(),
-			IndexName:                 indexName,
+			IndexName:                 c.getIndex(attribute),
 			KeyConditionExpression:    builder.conditionExpression(),
 			Select:                    dynamodb.SelectCount,
 			TableName:                 aws.String(c.table),
@@ -159,46 +169,29 @@ func (c Client) zGeneralCount(key string, min string, max string, attribute stri
 }
 
 func (c Client) ZINCRBY(key string, member string, delta float64) (newScore float64, err error) {
-	tries := 0
-	for tries < 3 {
-		oldScore, ok, err := c.ZSCORE(key, member)
-		if err != nil {
-			return newScore, err
-		}
+	builder := newExpresionBuilder()
+	builder.keys[skScore] = struct{}{}
+	builder.values["delta"] = zScoreToAv(delta)
 
-		newScore = oldScore + delta
-		builder := newExpresionBuilder()
-		builder.updateSET(sk2, StringValue{floatToLex(big.NewFloat(newScore))})
-
-		if ok {
-			builder.addConditionEquality(sk2, StringValue{floatToLex(big.NewFloat(oldScore))})
-		}
-
-		_, err = c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
-			ConditionExpression:       builder.conditionExpression(),
-			ExpressionAttributeNames:  builder.expressionAttributeNames(),
-			ExpressionAttributeValues: builder.expressionAttributeValues(),
-			Key: keyDef{
-				pk: key,
-				sk: member,
-			}.toAV(),
-			TableName:        aws.String(c.table),
-			UpdateExpression: builder.updateExpression(),
-		}).Send(context.TODO())
-
-		if conditionFailureError(err) {
-			tries++
-			continue
-		}
-
-		if err != nil {
-			return newScore, err
-		}
-
+	resp, err := c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
+		ConditionExpression:       builder.conditionExpression(),
+		ExpressionAttributeNames:  builder.expressionAttributeNames(),
+		ExpressionAttributeValues: builder.expressionAttributeValues(),
+		Key: keyDef{
+			pk: key,
+			sk: member,
+		}.toAV(),
+		ReturnValues:     dynamodb.ReturnValueAllNew,
+		TableName:        aws.String(c.table),
+		UpdateExpression: aws.String(fmt.Sprintf("ADD #%v :delta", skScore)),
+	}).Send(context.TODO())
+	if err != nil {
 		return newScore, err
 	}
+	newScore = zScoreFromAV(resp.Attributes[skScore])
 
-	return newScore, fmt.Errorf("too much contention on %v / %v", key, member)
+	return
+
 }
 
 func (c Client) ZINTERSTORE(destinationKey string, sourceKeys []string, aggregation ZAggregation, weights map[string]float64) (count int64, err error) {
@@ -211,7 +204,7 @@ func (c Client) ZINTERSTORE(destinationKey string, sourceKeys []string, aggregat
 }
 
 func (c Client) ZLEXCOUNT(key string, min string, max string) (count int64, err error) {
-	return c.zGeneralCount(key, min, max, sk)
+	return c.zGeneralCount(key, AV{StringValue{min}.toAV()}, AV{StringValue{max}.toAV()}, sk)
 }
 
 func (c Client) ZPOPMAX(key string, count int64) (membersWithScores map[string]float64, err error) {
@@ -223,7 +216,7 @@ func (c Client) ZPOPMIN(key string, count int64) (membersWithScores map[string]f
 }
 
 func (c Client) zPop(key string, count int64, forward bool) (membersWithScores map[string]float64, err error) {
-	membersWithScores, err = c.zGeneralRange(key, "", "", 0, count, forward, sk2)
+	membersWithScores, err = c.zGeneralRange(key, AV{}, AV{}, 0, count, forward, skScore)
 	if err != nil {
 		return
 	}
@@ -249,19 +242,19 @@ func (c Client) ZRANGE(key string, start, stop int64) (membersWithScores map[str
 
 func (c Client) zRange(key string, start int64, stop int64, forward bool) (membersWithScores map[string]float64, err error) {
 	if start < 0 && stop < 0 {
-		return c.zGeneralRange(key, "", "", -stop-1, -start, !forward, sk2)
+		return c.zGeneralRange(key, AV{}, AV{}, -stop-1, -start, !forward, skScore)
 	}
 
 	if start > 0 && stop < 0 {
-		lastScore, err := c.zGeneralRange(key, "", "", -stop-1, 1, !forward, sk2)
+		lastScore, err := c.zGeneralRange(key, AV{}, AV{}, -stop-1, 1, !forward, skScore)
 		if err != nil {
 			return membersWithScores, err
 		}
 
-		return c.zGeneralRange(key, "", floatToLex(big.NewFloat(floatValues(lastScore)[0])), start, 0, forward, sk2)
+		return c.zGeneralRange(key, AV{}, AV{zScoreToAv(floatValues(lastScore)[0])}, start, 0, forward, skScore)
 	}
 
-	return c.zGeneralRange(key, "", "", start, stop-start+1, forward, sk2)
+	return c.zGeneralRange(key, AV{}, AV{}, start, stop-start+1, forward, skScore)
 }
 
 func floatValues(floatValuedMap map[string]float64) (values []float64) {
@@ -273,15 +266,15 @@ func floatValues(floatValuedMap map[string]float64) (values []float64) {
 }
 
 func (c Client) ZRANGEBYLEX(key string, min, max string, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return c.zGeneralRange(key, min, max, offset, count, true, sk)
+	return c.zGeneralRange(key, AV{StringValue{min}.toAV()}, AV{StringValue{max}.toAV()}, offset, count, true, sk)
 }
 
 func (c Client) ZRANGEBYSCORE(key string, min, max float64, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return c.zGeneralRange(key, floatToLex(big.NewFloat(min)), floatToLex(big.NewFloat(max)), offset, count, true, sk2)
+	return c.zGeneralRange(key, AV{zScoreToAv(min)}, AV{zScoreToAv(max)}, offset, count, true, skScore)
 }
 
 func (c Client) zGeneralRange(key string,
-	start string, stop string,
+	start AV, stop AV,
 	offset int64, count int64,
 	forward bool, attribute string) (membersWithScores map[string]float64, err error) {
 	membersWithScores = make(map[string]float64)
@@ -290,12 +283,6 @@ func (c Client) zGeneralRange(key string,
 	hasMoreResults := true
 
 	var lastKey map[string]dynamodb.AttributeValue
-
-	var indexName *string
-
-	if attribute == sk2 {
-		indexName = aws.String("lsi_sk2")
-	}
 
 	for hasMoreResults {
 		var queryLimit *int64
@@ -306,20 +293,20 @@ func (c Client) zGeneralRange(key string,
 		builder := newExpresionBuilder()
 		builder.addConditionEquality(pk, StringValue{key})
 
-		if start != "" {
-			builder.values["start"] = StringValue{start}.toAV()
+		if !start.Empty() {
+			builder.values["start"] = start.av
 		}
 
-		if stop != "" {
-			builder.values["stop"] = StringValue{stop}.toAV()
+		if !stop.Empty() {
+			builder.values["stop"] = stop.av
 		}
 
 		switch {
-		case start != "" && stop != "":
+		case start.Present() && stop.Present():
 			builder.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", attribute), attribute)
-		case start != "":
+		case start.Present():
 			builder.condition(fmt.Sprintf("#%v >= :start", attribute), attribute)
-		case stop != "":
+		case stop.Present():
 			builder.condition(fmt.Sprintf("#%v <= :stop", attribute), attribute)
 		}
 
@@ -328,7 +315,7 @@ func (c Client) zGeneralRange(key string,
 			ExclusiveStartKey:         lastKey,
 			ExpressionAttributeNames:  builder.expressionAttributeNames(),
 			ExpressionAttributeValues: builder.expressionAttributeValues(),
-			IndexName:                 indexName,
+			IndexName:                 c.getIndex(attribute),
 			KeyConditionExpression:    builder.conditionExpression(),
 			Limit:                     queryLimit,
 			ScanIndexForward:          aws.Bool(forward),
@@ -341,7 +328,7 @@ func (c Client) zGeneralRange(key string,
 		for _, item := range resp.Items {
 			if index >= offset {
 				pi := parseItem(item)
-				membersWithScores[pi.sk], _ = lexToFloat(pi.sk2).Float64()
+				membersWithScores[pi.sk] = zScoreFromAV(item[skScore])
 				remainingCount--
 			}
 			index++
@@ -370,9 +357,9 @@ func (c Client) zRank(key string, member string, forward bool) (rank int64, ok b
 	var count int64
 
 	if forward {
-		count, err = c.zGeneralCount(key, "", floatToLex(big.NewFloat(score)), sk2)
+		count, err = c.zGeneralCount(key, AV{}, AV{zScoreToAv(score)}, skScore)
 	} else {
-		count, err = c.zGeneralCount(key, floatToLex(big.NewFloat(score)), "", sk2)
+		count, err = c.zGeneralCount(key, AV{zScoreToAv(score)}, AV{}, skScore)
 	}
 
 	if err == nil {
@@ -451,11 +438,11 @@ func (c Client) ZREVRANGE(key string, start, stop int64) (membersWithScores map[
 }
 
 func (c Client) ZREVRANGEBYLEX(key string, max, min string, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return c.zGeneralRange(key, min, max, offset, count, false, sk)
+	return c.zGeneralRange(key, AV{StringValue{min}.toAV()}, AV{StringValue{max}.toAV()}, offset, count, false, sk)
 }
 
 func (c Client) ZREVRANGEBYSCORE(key string, max, min float64, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return c.zGeneralRange(key, floatToLex(big.NewFloat(min)), floatToLex(big.NewFloat(max)), offset, count, false, sk2)
+	return c.zGeneralRange(key, AV{zScoreToAv(min)}, AV{zScoreToAv(max)}, offset, count, false, skScore)
 }
 
 func (c Client) ZREVRANK(key string, member string) (rank int64, ok bool, err error) {
@@ -469,12 +456,12 @@ func (c Client) ZSCORE(key string, member string) (score float64, ok bool, err e
 			pk: key,
 			sk: member,
 		}.toAV(),
-		ProjectionExpression: aws.String(strings.Join([]string{sk2}, ", ")),
+		ProjectionExpression: aws.String(strings.Join([]string{skScore}, ", ")),
 		TableName:            aws.String(c.table),
 	}).Send(context.TODO())
 	if err == nil && len(resp.Item) > 0 {
 		ok = true
-		score, _ = lexToFloat(aws.StringValue(resp.Item[sk2].S)).Float64()
+		score = zScoreFromAV(resp.Item[skScore])
 	}
 
 	return

@@ -10,7 +10,7 @@ import (
 func TestZBasic(t *testing.T) {
 	c := newClient(t)
 
-	count, err := c.ZADD("z1", map[string]float64{"m1": 1, "m2": 2, "m3": 3, "m4": math.Inf(+1)}, Flags{})
+	count, err := c.ZADD("z1", map[string]float64{"m1": 1, "m2": 2, "m3": 3, "m4": 4}, Flags{})
 	assert.NoError(t, err)
 	assert.Equal(t, int64(4), count)
 

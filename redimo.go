@@ -2,7 +2,6 @@ package redimo
 
 import (
 	"fmt"
-	"math"
 	"math/big"
 	"strconv"
 	"strings"
@@ -277,87 +276,4 @@ func conditionFailureError(err error) bool {
 	}
 
 	return false
-}
-
-const expFlip = 9999
-const mantissaFlip = 1
-
-// ceeeemmmmmmmmmmmmmmmmm with the mantissa '0.' removed before big.Float guarantees < 1
-func floatToLex(f *big.Float) (s string) {
-	mantissa := new(big.Float)
-	exp := f.MantExp(mantissa)
-
-	var c string
-
-	switch {
-	case mantissa.Sign() > 0 && f.IsInf():
-		c = "6"
-		exp = 0
-		mantissa = big.NewFloat(0)
-
-	case mantissa.Sign() < 0 && f.IsInf():
-		c = "0"
-		exp = 0
-		mantissa = big.NewFloat(0)
-
-	case mantissa.Sign() > 0 && exp >= 0:
-		c = "5"
-
-	case mantissa.Sign() > 0 && exp < 0:
-		c = "4"
-		exp = expFlip + exp
-
-	case mantissa.Sign() == 0 && exp == 0:
-		c = "3"
-
-	case mantissa.Sign() < 0 && exp < 0:
-		c = "2"
-		exp = -exp
-
-		mantissa.Add(mantissa, big.NewFloat(mantissaFlip))
-
-	case mantissa.Sign() < 0 && exp >= 0:
-		c = "1"
-		exp = expFlip - exp
-
-		mantissa.Add(mantissa, big.NewFloat(mantissaFlip))
-	}
-	// Join after discarding the '0.' preceding the mantissa
-	return strings.Join([]string{c, leftPadInt(exp, 4), mantissa.Text('f', 17)[2:]}, "")
-}
-
-func lexToFloat(lex string) (f *big.Float) {
-	//ceeeemmmmmmmmmmmmmmmmm
-	//01234567...
-	exponent, _ := strconv.ParseInt(lex[1:5], 10, 64)
-	mantissa, _, _ := new(big.Float).Parse("0."+lex[5:22], 10)
-
-	switch lex[0] {
-	case '0':
-		return big.NewFloat(math.Inf(-1))
-	case '1':
-		return new(big.Float).SetMantExp(mantissa.Add(mantissa, big.NewFloat(-mantissaFlip)), int(expFlip-exponent))
-	case '2':
-		return new(big.Float).SetMantExp(mantissa.Add(mantissa, big.NewFloat(-mantissaFlip)), int(-exponent))
-	case '3':
-		return big.NewFloat(0)
-	case '4':
-		return new(big.Float).SetMantExp(mantissa, int(exponent-expFlip))
-	case '5':
-		return new(big.Float).SetMantExp(mantissa, int(exponent))
-	case '6':
-		return big.NewFloat(math.Inf(+1))
-	}
-
-	return
-}
-
-func leftPadInt(exponent int, length int) (s string) {
-	s = strconv.Itoa(exponent)
-
-	for len(s) < length {
-		s = "0" + s
-	}
-
-	return
 }

@@ -2,11 +2,7 @@ package redimo
 
 import (
 	"context"
-	"math"
-	"math/big"
-	"math/rand"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -134,39 +130,4 @@ func newConfig(t *testing.T) aws.Config {
 	cfg.HTTPClient = http.DefaultClient
 
 	return cfg
-}
-
-func TestFloatLexConversions(t *testing.T) {
-	t.Parallel()
-
-	for i := 0; i < 100; i++ {
-		checkFloat(t, big.NewFloat(rand.Float64()))
-		checkFloat(t, big.NewFloat(rand.ExpFloat64()))
-		checkFloat(t, big.NewFloat(rand.NormFloat64()))
-	}
-
-	checkFloat(t, big.NewFloat(1.92384792872902345023085473838472938e-6))
-	checkFloat(t, big.NewFloat(2838.398672948723987e2))
-	checkFloat(t, big.NewFloat(-2838.398672948723987))
-	checkFloat(t, big.NewFloat(-2838.398672948723987e-5))
-	checkFloat(t, big.NewFloat(math.MaxFloat64))
-	checkFloat(t, big.NewFloat(math.MaxFloat32))
-	checkFloat(t, big.NewFloat(math.SmallestNonzeroFloat64))
-	checkFloat(t, big.NewFloat(math.SmallestNonzeroFloat32))
-	checkFloat(t, big.NewFloat(0))
-	checkFloat(t, big.NewFloat(math.Inf(-1)))
-	checkFloat(t, big.NewFloat(math.Inf(+1)))
-}
-
-func checkFloat(t *testing.T, rfloat *big.Float) {
-	lex := floatToLex(rfloat)
-	parsed := lexToFloat(lex + "anything else")
-	assert.Equal(t, 22, len(lex))
-
-	expected, _ := rfloat.Float64()
-	actual, _ := parsed.Float64()
-	assert.Equal(t, expected, actual, lex)
-
-	comparison := big.NewFloat(rand.NormFloat64())
-	assert.Equal(t, comparison.Cmp(rfloat), strings.Compare(floatToLex(comparison), lex))
 }
