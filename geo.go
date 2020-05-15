@@ -99,14 +99,13 @@ func (c Client) GEODIST(key string, member1, member2 string, unit GUnit) (distan
 	return locations[member1].DistanceTo(locations[member2], unit), true, nil
 }
 
-func (c Client) GEOHASH(key string, members ...string) (geohashes []string, err error) {
+func (c Client) GEOHASH(key string, members ...string) (geohashes map[string]string, err error) {
+	geohashes = make(map[string]string)
 	locations, err := c.GEOPOS(key, members...)
 
 	for _, member := range members {
 		if location, found := locations[member]; found {
-			geohashes = append(geohashes, location.Geohash())
-		} else {
-			geohashes = append(geohashes, "")
+			geohashes[member] = location.Geohash()
 		}
 	}
 

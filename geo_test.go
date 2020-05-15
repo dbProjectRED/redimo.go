@@ -34,11 +34,11 @@ func TestGeoBasics(t *testing.T) {
 
 	geohashes, err := c.GEOHASH("Sicily", "Palermo")
 	assert.NoError(t, err)
-	assert.Equal(t, []string{"sqc8b49rnyte"}, geohashes)
+	assert.Equal(t, map[string]string{"Palermo": "sqc8b49rnyte"}, geohashes)
 
 	geohashes, err = c.GEOHASH("Sicily", "Palermo", "Catania")
 	assert.NoError(t, err)
-	assert.Equal(t, []string{"sqc8b49rnyte", "sqdtr74hyu5n"}, geohashes)
+	assert.Equal(t, map[string]string{"Palermo": "sqc8b49rnyte", "Catania": "sqdtr74hyu5n"}, geohashes)
 
 	distance, ok, err := c.GEODIST("Sicily", "Palermo", "Catania", Meters)
 	assert.NoError(t, err)
