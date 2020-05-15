@@ -2,6 +2,7 @@ package redimo
 
 import (
 	"context"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -89,9 +90,9 @@ func (c Client) GETSET(key string, value Value) (oldValue ReturnValue, err error
 	return
 }
 
-func (c Client) MGET(keys ...string) (outputs []ReturnValue, err error) {
+func (c Client) MGET(keys ...string) (values map[string]ReturnValue, err error) {
+	values = make(map[string]ReturnValue)
 	inputRequests := make([]dynamodb.TransactGetItem, len(keys))
-	outputs = make([]ReturnValue, len(keys))
 
 	for i, key := range keys {
 		inputRequests[i] = dynamodb.TransactGetItem{
@@ -100,7 +101,7 @@ func (c Client) MGET(keys ...string) (outputs []ReturnValue, err error) {
 					pk: key,
 					sk: emptySK,
 				}.toAV(),
-				ProjectionExpression: aws.String(vk),
+				ProjectionExpression: aws.String(strings.Join([]string{vk, pk}, ", ")),
 				TableName:            aws.String(c.table),
 			},
 		}
@@ -114,12 +115,9 @@ func (c Client) MGET(keys ...string) (outputs []ReturnValue, err error) {
 		return
 	}
 
-	for i, out := range resp.Responses {
-		if len(out.Item) > 0 {
-			outputs[i] = parseItem(out.Item).val
-		} else {
-			outputs[i] = ReturnValue{}
-		}
+	for _, item := range resp.Responses {
+		pi := parseItem(item.Item)
+		values[pi.pk] = pi.val
 	}
 
 	return
