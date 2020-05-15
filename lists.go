@@ -37,7 +37,7 @@ type lNode struct {
 	value   string
 }
 
-const NULL = "NULL"
+const null = "NULL"
 
 func (ln lNode) toAV() map[string]dynamodb.AttributeValue {
 	avm := map[string]dynamodb.AttributeValue{}
@@ -146,11 +146,11 @@ func (ln lNode) updateSideAction(side Side, newAddress string, table string) dyn
 }
 
 func (ln lNode) isTail() bool {
-	return ln.right == NULL
+	return ln.right == null
 }
 
 func (ln lNode) isHead() bool {
-	return ln.left == NULL
+	return ln.left == null
 }
 
 func (ln lNode) putAction(table string) dynamodb.TransactWriteItem {
@@ -309,11 +309,11 @@ func (c Client) lPopActions(key string, side Side) (element string, actions []dy
 	element = endNode.value
 
 	penultimateNodeAddress := endNode.next(side)
-	if penultimateNodeAddress != NULL {
+	if penultimateNodeAddress != null {
 		penultimateKeyNode := lNode{key: key, address: penultimateNodeAddress}
 		penultimateKeyNode.setPrev(side, endNode.address)
 
-		actions = append(actions, penultimateKeyNode.updateSideAction(side, NULL, c.table))
+		actions = append(actions, penultimateKeyNode.updateSideAction(side, null, c.table))
 	}
 
 	actions = append(actions, endNode.deleteAction(c.table))
@@ -368,14 +368,14 @@ func (c Client) lPushActions(key string, element string, side Side, flags Flags)
 	if existingList {
 		node.address = ulid.MustNew(ulid.Now(), rand.Reader).String()
 		node.setNext(side, currentEndNode.address)
-		node.setPrev(side, NULL)
+		node.setPrev(side, null)
 
 		actions = append(actions, currentEndNode.updateSideAction(side, node.address, c.table))
 	} else {
 		// start the list with a constant address - this prevents multiple calls from overwriting it
 		node.address = key
-		node.left = NULL
-		node.right = NULL
+		node.left = null
+		node.right = null
 	}
 
 	actions = append(actions, node.putAction(c.table))
@@ -387,7 +387,7 @@ func (c Client) lFindEnd(key string, side Side) (node lNode, found bool, err err
 	node.key = key
 	queryCondition := newExpresionBuilder()
 	queryCondition.addConditionEquality(pk, StringValue{node.key})
-	queryCondition.addConditionEquality(node.prevAttr(side), StringValue{NULL})
+	queryCondition.addConditionEquality(node.prevAttr(side), StringValue{null})
 
 	resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 		ConsistentRead:            aws.Bool(true),
@@ -478,7 +478,7 @@ func (c Client) LRANGE(key string, start, stop int64) (elements []string, err er
 			node := lParseNode(rawNode)
 			nodeMap[node.address] = node
 
-			if node.left == NULL {
+			if node.left == null {
 				headAddress = node.address
 			}
 		}
@@ -625,8 +625,8 @@ func (c Client) lRotate(key string) (element string, ok bool, err error) {
 		// no action to take
 
 	case leftEnd.right == rightEnd.address:
-		actions = append(actions, leftEnd.updateBothSidesAction(rightEnd.address, NULL, c.table))
-		actions = append(actions, rightEnd.updateBothSidesAction(NULL, leftEnd.address, c.table))
+		actions = append(actions, leftEnd.updateBothSidesAction(rightEnd.address, null, c.table))
+		actions = append(actions, rightEnd.updateBothSidesAction(null, leftEnd.address, c.table))
 		element = rightEnd.value
 
 	case leftEnd.right == rightEnd.left:
@@ -640,8 +640,8 @@ func (c Client) lRotate(key string) (element string, ok bool, err error) {
 		}
 
 		actions = append(actions, leftEnd.updateBothSidesAction(rightEnd.address, middle.address, c.table))
-		actions = append(actions, rightEnd.updateBothSidesAction(NULL, leftEnd.address, c.table))
-		actions = append(actions, middle.updateBothSidesAction(leftEnd.address, NULL, c.table))
+		actions = append(actions, rightEnd.updateBothSidesAction(null, leftEnd.address, c.table))
+		actions = append(actions, middle.updateBothSidesAction(leftEnd.address, null, c.table))
 		element = rightEnd.value
 
 	default:
@@ -655,8 +655,8 @@ func (c Client) lRotate(key string) (element string, ok bool, err error) {
 		}
 
 		actions = append(actions, leftEnd.updateSideAction(Left, rightEnd.address, c.table))
-		actions = append(actions, rightEnd.updateBothSidesAction(NULL, leftEnd.address, c.table))
-		actions = append(actions, penultimateRight.updateSideAction(Right, NULL, c.table))
+		actions = append(actions, rightEnd.updateBothSidesAction(null, leftEnd.address, c.table))
+		actions = append(actions, penultimateRight.updateSideAction(Right, null, c.table))
 		element = rightEnd.value
 	}
 

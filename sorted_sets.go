@@ -5,31 +5,34 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
-type Aggregation string
+type ZAggregation string
 
 const (
-	Sum Aggregation = "SUM"
-	Min Aggregation = "MIN"
-	Max Aggregation = "MAX"
+	ZAggregationSum ZAggregation = "SUM"
+	ZAggregationMin ZAggregation = "MIN"
+	ZAggregationMax ZAggregation = "MAX"
 )
 
-var accumulators = map[Aggregation]func(float64, float64) float64{
-	Sum: func(a float64, b float64) float64 {
+const skScore = skN1
+
+var accumulators = map[ZAggregation]func(float64, float64) float64{
+	ZAggregationSum: func(a float64, b float64) float64 {
 		return a + b
 	},
-	Min: func(a float64, b float64) float64 {
+	ZAggregationMin: func(a float64, b float64) float64 {
 		if a < b {
 			return a
 		}
 		return b
 	},
-	Max: func(a float64, b float64) float64 {
+	ZAggregationMax: func(a float64, b float64) float64 {
 		if a > b {
 			return a
 		}
@@ -37,7 +40,17 @@ var accumulators = map[Aggregation]func(float64, float64) float64{
 	},
 }
 
-func (c Client) ZADD(key string, membersWithScores map[string]float64, flags Flags) (savedCount int64, err error) {
+func zScoreToAv(score float64) (av dynamodb.AttributeValue) {
+	av.N = aws.String(strconv.FormatFloat(score, 'G', 17, 64))
+	return
+}
+
+func zScoreFromAV(av dynamodb.AttributeValue) float64 {
+	f, _ := strconv.ParseFloat(aws.StringValue(av.N), 64)
+	return f
+}
+
+func (c Client) ZADD(key string, membersWithScores map[string]float64, flags Flags) (addedCount int64, err error) {
 	for member, score := range membersWithScores {
 		builder := newExpresionBuilder()
 		builder.updateSET(sk2, StringValue{floatToLex(big.NewFloat(score))})
@@ -68,7 +81,7 @@ func (c Client) ZADD(key string, membersWithScores map[string]float64, flags Fla
 		if err != nil {
 			return
 		}
-		savedCount++
+		addedCount++
 	}
 
 	return
@@ -79,10 +92,10 @@ func (c Client) ZCARD(key string) (count int64, err error) {
 }
 
 func (c Client) ZCOUNT(key string, minScore, maxScore float64) (count int64, err error) {
-	return c._zGeneralCount(key, floatToLex(big.NewFloat(minScore)), floatToLex(big.NewFloat(maxScore)), sk2)
+	return c.zGeneralCount(key, floatToLex(big.NewFloat(minScore)), floatToLex(big.NewFloat(maxScore)), sk2)
 }
 
-func (c Client) _zGeneralCount(key string, min string, max string, attribute string) (count int64, err error) {
+func (c Client) zGeneralCount(key string, min string, max string, attribute string) (count int64, err error) {
 	builder := newExpresionBuilder()
 	builder.addConditionEquality(pk, StringValue{key})
 
@@ -188,7 +201,7 @@ func (c Client) ZINCRBY(key string, member string, delta float64) (newScore floa
 	return newScore, fmt.Errorf("too much contention on %v / %v", key, member)
 }
 
-func (c Client) ZINTERSTORE(destinationKey string, sourceKeys []string, aggregation Aggregation, weights map[string]float64) (count int64, err error) {
+func (c Client) ZINTERSTORE(destinationKey string, sourceKeys []string, aggregation ZAggregation, weights map[string]float64) (count int64, err error) {
 	set, err := c.ZINTER(sourceKeys, aggregation, weights)
 	if err == nil {
 		count, err = c.ZADD(destinationKey, set, Flags{})
@@ -198,19 +211,19 @@ func (c Client) ZINTERSTORE(destinationKey string, sourceKeys []string, aggregat
 }
 
 func (c Client) ZLEXCOUNT(key string, min string, max string) (count int64, err error) {
-	return c._zGeneralCount(key, min, max, sk)
+	return c.zGeneralCount(key, min, max, sk)
 }
 
 func (c Client) ZPOPMAX(key string, count int64) (membersWithScores map[string]float64, err error) {
-	return c._zpop(key, count, false)
+	return c.zPop(key, count, false)
 }
 
 func (c Client) ZPOPMIN(key string, count int64) (membersWithScores map[string]float64, err error) {
-	return c._zpop(key, count, true)
+	return c.zPop(key, count, true)
 }
 
-func (c Client) _zpop(key string, count int64, forward bool) (membersWithScores map[string]float64, err error) {
-	membersWithScores, err = c._zGeneralRange(key, "", "", 0, count, forward, sk2)
+func (c Client) zPop(key string, count int64, forward bool) (membersWithScores map[string]float64, err error) {
+	membersWithScores, err = c.zGeneralRange(key, "", "", 0, count, forward, sk2)
 	if err != nil {
 		return
 	}
@@ -231,24 +244,24 @@ func (c Client) _zpop(key string, count int64, forward bool) (membersWithScores 
 }
 
 func (c Client) ZRANGE(key string, start, stop int64) (membersWithScores map[string]float64, err error) {
-	return c._zrange(key, start, stop, true)
+	return c.zRange(key, start, stop, true)
 }
 
-func (c Client) _zrange(key string, start int64, stop int64, forward bool) (membersWithScores map[string]float64, err error) {
+func (c Client) zRange(key string, start int64, stop int64, forward bool) (membersWithScores map[string]float64, err error) {
 	if start < 0 && stop < 0 {
-		return c._zGeneralRange(key, "", "", -stop-1, -start, !forward, sk2)
+		return c.zGeneralRange(key, "", "", -stop-1, -start, !forward, sk2)
 	}
 
 	if start > 0 && stop < 0 {
-		lastScore, err := c._zGeneralRange(key, "", "", -stop-1, 1, !forward, sk2)
+		lastScore, err := c.zGeneralRange(key, "", "", -stop-1, 1, !forward, sk2)
 		if err != nil {
 			return membersWithScores, err
 		}
 
-		return c._zGeneralRange(key, "", floatToLex(big.NewFloat(floatValues(lastScore)[0])), start, 0, forward, sk2)
+		return c.zGeneralRange(key, "", floatToLex(big.NewFloat(floatValues(lastScore)[0])), start, 0, forward, sk2)
 	}
 
-	return c._zGeneralRange(key, "", "", start, stop-start+1, forward, sk2)
+	return c.zGeneralRange(key, "", "", start, stop-start+1, forward, sk2)
 }
 
 func floatValues(floatValuedMap map[string]float64) (values []float64) {
@@ -260,14 +273,14 @@ func floatValues(floatValuedMap map[string]float64) (values []float64) {
 }
 
 func (c Client) ZRANGEBYLEX(key string, min, max string, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return c._zGeneralRange(key, min, max, offset, count, true, sk)
+	return c.zGeneralRange(key, min, max, offset, count, true, sk)
 }
 
 func (c Client) ZRANGEBYSCORE(key string, min, max float64, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return c._zGeneralRange(key, floatToLex(big.NewFloat(min)), floatToLex(big.NewFloat(max)), offset, count, true, sk2)
+	return c.zGeneralRange(key, floatToLex(big.NewFloat(min)), floatToLex(big.NewFloat(max)), offset, count, true, sk2)
 }
 
-func (c Client) _zGeneralRange(key string,
+func (c Client) zGeneralRange(key string,
 	start string, stop string,
 	offset int64, count int64,
 	forward bool, attribute string) (membersWithScores map[string]float64, err error) {
@@ -345,10 +358,10 @@ func (c Client) _zGeneralRange(key string,
 }
 
 func (c Client) ZRANK(key string, member string) (rank int64, ok bool, err error) {
-	return c._zrank(key, member, true)
+	return c.zRank(key, member, true)
 }
 
-func (c Client) _zrank(key string, member string, forward bool) (rank int64, ok bool, err error) {
+func (c Client) zRank(key string, member string, forward bool) (rank int64, ok bool, err error) {
 	score, ok, err := c.ZSCORE(key, member)
 	if err != nil || !ok {
 		return
@@ -357,9 +370,9 @@ func (c Client) _zrank(key string, member string, forward bool) (rank int64, ok 
 	var count int64
 
 	if forward {
-		count, err = c._zGeneralCount(key, "", floatToLex(big.NewFloat(score)), sk2)
+		count, err = c.zGeneralCount(key, "", floatToLex(big.NewFloat(score)), sk2)
 	} else {
-		count, err = c._zGeneralCount(key, floatToLex(big.NewFloat(score)), "", sk2)
+		count, err = c.zGeneralCount(key, floatToLex(big.NewFloat(score)), "", sk2)
 	}
 
 	if err == nil {
@@ -400,13 +413,13 @@ func (c Client) ZREM(key string, members ...string) (count int64, err error) {
 func (c Client) ZREMRANGEBYLEX(key string, min, max string) (count int64, err error) {
 	membersWithScores, err := c.ZRANGEBYLEX(key, min, max, 0, 0)
 	if err == nil {
-		_, err = c.ZREM(key, membersKeys(membersWithScores)...)
+		_, err = c.ZREM(key, zReadKeys(membersWithScores)...)
 	}
 
 	return int64(len(membersWithScores)), err
 }
 
-func membersKeys(membersWithScores map[string]float64) []string {
+func zReadKeys(membersWithScores map[string]float64) []string {
 	members := make([]string, 0, len(membersWithScores))
 	for member := range membersWithScores {
 		members = append(members, member)
@@ -418,7 +431,7 @@ func membersKeys(membersWithScores map[string]float64) []string {
 func (c Client) ZREMRANGEBYRANK(key string, start, stop int64) (count int64, err error) {
 	membersWithScores, err := c.ZRANGE(key, start, stop)
 	if err == nil {
-		_, err = c.ZREM(key, membersKeys(membersWithScores)...)
+		_, err = c.ZREM(key, zReadKeys(membersWithScores)...)
 	}
 
 	return int64(len(membersWithScores)), err
@@ -427,26 +440,26 @@ func (c Client) ZREMRANGEBYRANK(key string, start, stop int64) (count int64, err
 func (c Client) ZREMRANGEBYSCORE(key string, min, max float64) (count int64, err error) {
 	membersWithScores, err := c.ZRANGEBYSCORE(key, min, max, 0, 0)
 	if err == nil {
-		_, err = c.ZREM(key, membersKeys(membersWithScores)...)
+		_, err = c.ZREM(key, zReadKeys(membersWithScores)...)
 	}
 
 	return int64(len(membersWithScores)), err
 }
 
 func (c Client) ZREVRANGE(key string, start, stop int64) (membersWithScores map[string]float64, err error) {
-	return c._zrange(key, start, stop, false)
+	return c.zRange(key, start, stop, false)
 }
 
 func (c Client) ZREVRANGEBYLEX(key string, max, min string, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return c._zGeneralRange(key, min, max, offset, count, false, sk)
+	return c.zGeneralRange(key, min, max, offset, count, false, sk)
 }
 
 func (c Client) ZREVRANGEBYSCORE(key string, max, min float64, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return c._zGeneralRange(key, floatToLex(big.NewFloat(min)), floatToLex(big.NewFloat(max)), offset, count, false, sk2)
+	return c.zGeneralRange(key, floatToLex(big.NewFloat(min)), floatToLex(big.NewFloat(max)), offset, count, false, sk2)
 }
 
 func (c Client) ZREVRANK(key string, member string) (rank int64, ok bool, err error) {
-	return c._zrank(key, member, false)
+	return c.zRank(key, member, false)
 }
 
 func (c Client) ZSCORE(key string, member string) (score float64, ok bool, err error) {
@@ -467,7 +480,7 @@ func (c Client) ZSCORE(key string, member string) (score float64, ok bool, err e
 	return
 }
 
-func (c Client) ZUNIONSTORE(destinationKey string, sourceKeys []string, aggregation Aggregation, weights map[string]float64) (count int64, err error) {
+func (c Client) ZUNIONSTORE(destinationKey string, sourceKeys []string, aggregation ZAggregation, weights map[string]float64) (count int64, err error) {
 	set, err := c.ZUNION(sourceKeys, aggregation, weights)
 	if err == nil {
 		count, err = c.ZADD(destinationKey, set, Flags{})
@@ -476,7 +489,7 @@ func (c Client) ZUNIONSTORE(destinationKey string, sourceKeys []string, aggregat
 	return
 }
 
-func getWeight(weights map[string]float64, key string) float64 {
+func zGetWeight(weights map[string]float64, key string) float64 {
 	if weights == nil {
 		return 1
 	}
@@ -487,7 +500,7 @@ func getWeight(weights map[string]float64, key string) float64 {
 
 	return 1
 }
-func (c Client) ZUNION(sourceKeys []string, aggregation Aggregation, weights map[string]float64) (membersWithScores map[string]float64, err error) {
+func (c Client) ZUNION(sourceKeys []string, aggregation ZAggregation, weights map[string]float64) (membersWithScores map[string]float64, err error) {
 	membersWithScores = make(map[string]float64)
 
 	for _, sourceKey := range sourceKeys {
@@ -498,9 +511,9 @@ func (c Client) ZUNION(sourceKeys []string, aggregation Aggregation, weights map
 
 		for member, score := range currentSet {
 			if existingValue, ok := membersWithScores[member]; ok {
-				membersWithScores[member] = accumulators[aggregation](existingValue, score*getWeight(weights, sourceKey))
+				membersWithScores[member] = accumulators[aggregation](existingValue, score*zGetWeight(weights, sourceKey))
 			} else {
-				membersWithScores[member] = score * getWeight(weights, sourceKey)
+				membersWithScores[member] = score * zGetWeight(weights, sourceKey)
 			}
 		}
 	}
@@ -508,7 +521,7 @@ func (c Client) ZUNION(sourceKeys []string, aggregation Aggregation, weights map
 	return
 }
 
-func (c Client) ZINTER(sourceKeys []string, aggregation Aggregation, weights map[string]float64) (membersWithScores map[string]float64, err error) {
+func (c Client) ZINTER(sourceKeys []string, aggregation ZAggregation, weights map[string]float64) (membersWithScores map[string]float64, err error) {
 	membersWithScores, err = c.ZRANGEBYSCORE(sourceKeys[0], math.Inf(-1), math.Inf(+1), 0, 0)
 	if err != nil {
 		return
@@ -524,7 +537,7 @@ func (c Client) ZINTER(sourceKeys []string, aggregation Aggregation, weights map
 
 		for member, score := range membersWithScores {
 			if currentSetValue, ok := currentSet[member]; ok {
-				membersWithScores[member] = accumulators[aggregation](score, currentSetValue*getWeight(weights, sourceKey))
+				membersWithScores[member] = accumulators[aggregation](score, currentSetValue*zGetWeight(weights, sourceKey))
 			} else {
 				delete(membersWithScores, member)
 			}

@@ -12,7 +12,7 @@ import (
 	"github.com/mmcloughlin/geohash"
 )
 
-const EarthRadiusMeters = 6372797.560856
+const earthRadiusMeters = 6372797.560856
 
 type Location struct {
 	Lat float64
@@ -42,7 +42,7 @@ func (l *Location) setCellIDString(cellIDStr string) {
 }
 
 func (l Location) DistanceTo(other Location, unit Unit) float64 {
-	return Meters.To(unit, l.s2LatLng().Distance(other.s2LatLng()).Radians()*EarthRadiusMeters)
+	return Meters.To(unit, l.s2LatLng().Distance(other.s2LatLng()).Radians()*earthRadiusMeters)
 }
 
 func (l Location) s2LatLng() s2.LatLng {
@@ -136,7 +136,7 @@ func (c Client) GEOPOS(key string, members ...string) (locations map[string]Loca
 
 func (c Client) GEORADIUS(key string, center Location, radius float64, radiusUnit Unit, count int64) (positions map[string]Location, err error) {
 	positions = make(map[string]Location)
-	radiusCap := s2.CapFromCenterAngle(s2.PointFromLatLng(center.s2LatLng()), s1.Angle(radiusUnit.To(Meters, radius)/EarthRadiusMeters))
+	radiusCap := s2.CapFromCenterAngle(s2.PointFromLatLng(center.s2LatLng()), s1.Angle(radiusUnit.To(Meters, radius)/earthRadiusMeters))
 
 	for _, cellID := range radiusCap.CellUnionBound() {
 		builder := newExpresionBuilder()
