@@ -2,7 +2,6 @@ package redimo
 
 import (
 	"context"
-	"log"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -232,7 +231,6 @@ func (c Client) hIncr(key string, field string, delta Value) (after ReturnValue,
 
 func (c Client) HINCRBY(key string, field string, delta int64) (after int64, err error) {
 	rv, err := c.hIncr(key, field, IntValue{delta})
-	log.Println(aws.StringValue(rv.AV.N))
 
 	if err == nil {
 		after = rv.Int()
