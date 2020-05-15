@@ -89,7 +89,8 @@ func (c Client) HMSET(key string, fieldValues map[string]Value) (err error) {
 	return
 }
 
-func (c Client) HMGET(key string, fields ...string) (values []ReturnValue, err error) {
+func (c Client) HMGET(key string, fields ...string) (values map[string]ReturnValue, err error) {
+	values = make(map[string]ReturnValue)
 	items := make([]dynamodb.TransactGetItem, len(fields))
 	for i, field := range fields {
 		items[i] = dynamodb.TransactGetItem{Get: &dynamodb.Get{
@@ -97,7 +98,7 @@ func (c Client) HMGET(key string, fields ...string) (values []ReturnValue, err e
 				pk: key,
 				sk: field,
 			}.toAV(),
-			ProjectionExpression: aws.String(vk),
+			ProjectionExpression: aws.String(strings.Join([]string{sk, vk}, ", ")),
 			TableName:            aws.String(c.table),
 		}}
 	}
@@ -108,37 +109,30 @@ func (c Client) HMGET(key string, fields ...string) (values []ReturnValue, err e
 
 	if err == nil {
 		for _, r := range resp.Responses {
-			values = append(values, parseItem(r.Item).val)
+			pi := parseItem(r.Item)
+			values[pi.sk] = pi.val
 		}
 	}
 
 	return
 }
 
-func (c Client) HDEL(key string, fields ...string) (err error) {
-	deleteRequests := make([]dynamodb.WriteRequest, len(fields))
-	for i, field := range fields {
-		deleteRequests[i] = dynamodb.WriteRequest{
-			DeleteRequest: &dynamodb.DeleteRequest{Key: keyDef{
+func (c Client) HDEL(key string, fields ...string) (deletedCount int64, err error) {
+	for _, field := range fields {
+		resp, err := c.ddbClient.DeleteItemRequest(&dynamodb.DeleteItemInput{
+			Key: keyDef{
 				pk: key,
 				sk: field,
-			}.toAV()},
-		}
-	}
-
-	requestMap := map[string][]dynamodb.WriteRequest{
-		c.table: deleteRequests,
-	}
-
-	for len(requestMap) > 0 {
-		resp, err := c.ddbClient.BatchWriteItemRequest(&dynamodb.BatchWriteItemInput{
-			RequestItems: requestMap,
+			}.toAV(),
+			ReturnValues: dynamodb.ReturnValueAllOld,
+			TableName:    aws.String(c.table),
 		}).Send(context.TODO())
 		if err != nil {
-			return err
+			return deletedCount, err
 		}
-
-		requestMap = resp.UnprocessedItems
+		if len(resp.Attributes) > 0 {
+			deletedCount++
+		}
 	}
 
 	return

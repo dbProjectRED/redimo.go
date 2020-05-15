@@ -45,8 +45,9 @@ func TestBasicHashes(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(2), count)
 
-	err = c.HDEL("k1", "f2", "f1")
+	delCount, err := c.HDEL("k1", "f2", "f1")
 	assert.NoError(t, err)
+	assert.Equal(t, int64(2), delCount)
 
 	val, err = c.HGET("k1", "f2")
 	assert.NoError(t, err)
@@ -86,10 +87,12 @@ func TestAtomicHashOps(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "v2", val.String())
 
-	values, err := c.HMGET("k1", "f1", "f2")
+	values, err := c.HMGET("k1", "f1", "f2", "nonexistent")
 	assert.NoError(t, err)
-	assert.Len(t, values, 2)
-	assert.Equal(t, []string{"v1", "v2"}, []string{values[0].String(), values[1].String()})
+	assert.Len(t, values, 3)
+	assert.Equal(t, "v1", values["f1"].String())
+	assert.Equal(t, "v2", values["f2"].String())
+	assert.False(t, values["nonexistent"].Present())
 
 	ok, err := c.HSETNX("k1", "f1", StringValue{"v1"})
 	assert.NoError(t, err)

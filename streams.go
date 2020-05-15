@@ -658,7 +658,7 @@ func (c Client) XTRIM(key string, newCount int64) (deletedCount int64, err error
 
 		if len(sortKeys) > 0 {
 			deletedCount += int64(len(sortKeys))
-			err = c.HDEL(key, sortKeys...)
+			_, err = c.HDEL(key, sortKeys...)
 
 			if err != nil {
 				return deletedCount, err
