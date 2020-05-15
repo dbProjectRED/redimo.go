@@ -28,6 +28,8 @@ const (
 	Left  Side = "LEFT"
 	Right Side = "RIGHT"
 )
+const skLeft = sk3
+const skRight = sk4
 
 type lNode struct {
 	key     string

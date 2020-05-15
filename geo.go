@@ -13,6 +13,7 @@ import (
 )
 
 const earthRadiusMeters = 6372797.560856
+const skGeoCell = skN1
 
 type Location struct {
 	Lat float64

@@ -8,6 +8,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
+const emptySK = "/"
+
 func (c Client) GET(key string) (val Value, err error) {
 	resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
 		ConsistentRead: aws.Bool(c.consistentReads),

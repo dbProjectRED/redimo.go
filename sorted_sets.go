@@ -45,6 +45,7 @@ func zScoreToAv(score float64) (av dynamodb.AttributeValue) {
 	} else {
 		av.N = aws.String(strconv.FormatFloat(score, 'G', 17, 64))
 	}
+
 	return
 }
 
@@ -188,10 +189,10 @@ func (c Client) ZINCRBY(key string, member string, delta float64) (newScore floa
 	if err != nil {
 		return newScore, err
 	}
+
 	newScore = zScoreFromAV(resp.Attributes[skScore])
 
 	return
-
 }
 
 func (c Client) ZINTERSTORE(destinationKey string, sourceKeys []string, aggregation ZAggregation, weights map[string]float64) (count int64, err error) {
