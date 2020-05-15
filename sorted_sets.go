@@ -39,18 +39,24 @@ var accumulators = map[ZAggregation]func(float64, float64) float64{
 	},
 }
 
+type optionalValue interface {
+	Value
+	present() bool
+}
 type zScore struct {
 	score float64
 }
 
 func (zs zScore) ToAV() (av dynamodb.AttributeValue) {
-	if math.IsInf(zs.score, +1) || math.IsInf(zs.score, -1) {
-		// do nothing. Infinities cannot current be represented, and range queries will ignore empty AVs.
-	} else {
+	if zs.present() {
 		av.N = aws.String(strconv.FormatFloat(zs.score, 'G', 17, 64))
 	}
 
 	return
+}
+
+func (zs zScore) present() bool {
+	return !math.IsInf(zs.score, +1) && !math.IsInf(zs.score, -1)
 }
 
 type zLex struct {
@@ -58,13 +64,15 @@ type zLex struct {
 }
 
 func (zl zLex) ToAV() (av dynamodb.AttributeValue) {
-	if zl.lex == "" {
-		// do nothing. Empty strings cannot be represented, and range queries will ignore empty AVs.
-	} else {
+	if zl.present() {
 		av.S = aws.String(zl.lex)
 	}
 
 	return
+}
+
+func (zl zLex) present() bool {
+	return zl.lex != ""
 }
 
 func zScoreFromAV(av dynamodb.AttributeValue) float64 {
@@ -114,29 +122,29 @@ func (c Client) ZCARD(key string) (count int64, err error) {
 }
 
 func (c Client) ZCOUNT(key string, minScore, maxScore float64) (count int64, err error) {
-	return c.zGeneralCount(key, ReturnValue{zScore{minScore}.ToAV()}, ReturnValue{zScore{maxScore}.ToAV()}, skScore)
+	return c.zGeneralCount(key, zScore{minScore}, zScore{maxScore}, skScore)
 }
 
-func (c Client) zGeneralCount(key string, min ReturnValue, max ReturnValue, attribute string) (count int64, err error) {
+func (c Client) zGeneralCount(key string, min optionalValue, max optionalValue, attribute string) (count int64, err error) {
 	builder := newExpresionBuilder()
 	builder.addConditionEquality(pk, StringValue{key})
 
-	betweenRange := min.Present() && max.Present()
+	betweenRange := min.present() && max.present()
 
 	if betweenRange {
 		builder.condition(fmt.Sprintf("#%v BETWEEN :min AND :max", attribute), attribute)
 	}
 
-	if min.Present() {
-		builder.values["min"] = min.AV
+	if min.present() {
+		builder.values["min"] = min.ToAV()
 
 		if !betweenRange {
 			builder.condition(fmt.Sprintf("#%v >= :min", attribute), attribute)
 		}
 	}
 
-	if max.Present() {
-		builder.values["max"] = max.AV
+	if max.present() {
+		builder.values["max"] = max.ToAV()
 
 		if !betweenRange {
 			builder.condition(fmt.Sprintf("#%v <= :max", attribute), attribute)
@@ -211,7 +219,7 @@ func (c Client) ZINTERSTORE(destinationKey string, sourceKeys []string, aggregat
 }
 
 func (c Client) ZLEXCOUNT(key string, min string, max string) (count int64, err error) {
-	return c.zGeneralCount(key, ReturnValue{StringValue{min}.ToAV()}, ReturnValue{StringValue{max}.ToAV()}, sk)
+	return c.zGeneralCount(key, zLex{min}, zLex{max}, sk)
 }
 
 func (c Client) ZPOPMAX(key string, count int64) (membersWithScores map[string]float64, err error) {
@@ -222,8 +230,11 @@ func (c Client) ZPOPMIN(key string, count int64) (membersWithScores map[string]f
 	return c.zPop(key, count, true)
 }
 
+var negInf = zScore{math.Inf(-1)}
+var posInf = zScore{math.Inf(+1)}
+
 func (c Client) zPop(key string, count int64, forward bool) (membersWithScores map[string]float64, err error) {
-	membersWithScores, err = c.zGeneralRange(key, ReturnValue{}, ReturnValue{}, 0, count, forward, skScore)
+	membersWithScores, err = c.zGeneralRange(key, negInf, posInf, 0, count, forward, skScore)
 	if err != nil {
 		return
 	}
@@ -243,27 +254,25 @@ func (c Client) zPop(key string, count int64, forward bool) (membersWithScores m
 	return
 }
 
-type AV = ReturnValue
-
 func (c Client) ZRANGE(key string, start, stop int64) (membersWithScores map[string]float64, err error) {
 	return c.zRange(key, start, stop, true)
 }
 
 func (c Client) zRange(key string, start int64, stop int64, forward bool) (membersWithScores map[string]float64, err error) {
 	if start < 0 && stop < 0 {
-		return c.zGeneralRange(key, ReturnValue{}, ReturnValue{}, -stop-1, -start, !forward, skScore)
+		return c.zGeneralRange(key, negInf, posInf, -stop-1, -start, !forward, skScore)
 	}
 
 	if start > 0 && stop < 0 {
-		lastScore, err := c.zGeneralRange(key, ReturnValue{}, ReturnValue{}, -stop-1, 1, !forward, skScore)
+		lastScore, err := c.zGeneralRange(key, negInf, posInf, -stop-1, 1, !forward, skScore)
 		if err != nil {
 			return membersWithScores, err
 		}
 
-		return c.zGeneralRange(key, ReturnValue{}, ReturnValue{zScore{floatValues(lastScore)[0]}.ToAV()}, start, 0, forward, skScore)
+		return c.zGeneralRange(key, negInf, zScore{floatValues(lastScore)[0]}, start, 0, forward, skScore)
 	}
 
-	return c.zGeneralRange(key, AV{}, AV{}, start, stop-start+1, forward, skScore)
+	return c.zGeneralRange(key, negInf, posInf, start, stop-start+1, forward, skScore)
 }
 
 func floatValues(floatValuedMap map[string]float64) (values []float64) {
@@ -275,15 +284,15 @@ func floatValues(floatValuedMap map[string]float64) (values []float64) {
 }
 
 func (c Client) ZRANGEBYLEX(key string, min, max string, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return c.zGeneralRange(key, AV{StringValue{min}.ToAV()}, AV{StringValue{max}.ToAV()}, offset, count, true, sk)
+	return c.zGeneralRange(key, zLex{min}, zLex{max}, offset, count, true, sk)
 }
 
 func (c Client) ZRANGEBYSCORE(key string, min, max float64, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return c.zGeneralRange(key, AV{zScore{min}.ToAV()}, AV{zScore{max}.ToAV()}, offset, count, true, skScore)
+	return c.zGeneralRange(key, zScore{min}, zScore{max}, offset, count, true, skScore)
 }
 
 func (c Client) zGeneralRange(key string,
-	start ReturnValue, stop ReturnValue,
+	start optionalValue, stop optionalValue,
 	offset int64, count int64,
 	forward bool, attribute string) (membersWithScores map[string]float64, err error) {
 	membersWithScores = make(map[string]float64)
@@ -302,20 +311,20 @@ func (c Client) zGeneralRange(key string,
 		builder := newExpresionBuilder()
 		builder.addConditionEquality(pk, StringValue{key})
 
-		if !start.Empty() {
-			builder.values["start"] = start.AV
+		if start.present() {
+			builder.values["start"] = start.ToAV()
 		}
 
-		if !stop.Empty() {
-			builder.values["stop"] = stop.AV
+		if stop.present() {
+			builder.values["stop"] = stop.ToAV()
 		}
 
 		switch {
-		case start.Present() && stop.Present():
+		case start.present() && stop.present():
 			builder.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", attribute), attribute)
-		case start.Present():
+		case start.present():
 			builder.condition(fmt.Sprintf("#%v >= :start", attribute), attribute)
-		case stop.Present():
+		case stop.present():
 			builder.condition(fmt.Sprintf("#%v <= :stop", attribute), attribute)
 		}
 
@@ -366,9 +375,9 @@ func (c Client) zRank(key string, member string, forward bool) (rank int64, ok b
 	var count int64
 
 	if forward {
-		count, err = c.zGeneralCount(key, AV{}, AV{zScore{score}.ToAV()}, skScore)
+		count, err = c.zGeneralCount(key, negInf, zScore{score}, skScore)
 	} else {
-		count, err = c.zGeneralCount(key, AV{zScore{score}.ToAV()}, AV{}, skScore)
+		count, err = c.zGeneralCount(key, zScore{score}, posInf, skScore)
 	}
 
 	if err == nil {
@@ -447,11 +456,11 @@ func (c Client) ZREVRANGE(key string, start, stop int64) (membersWithScores map[
 }
 
 func (c Client) ZREVRANGEBYLEX(key string, max, min string, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return c.zGeneralRange(key, AV{zLex{min}.ToAV()}, AV{zLex{max}.ToAV()}, offset, count, false, sk)
+	return c.zGeneralRange(key, zLex{min}, zLex{max}, offset, count, false, sk)
 }
 
 func (c Client) ZREVRANGEBYSCORE(key string, max, min float64, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return c.zGeneralRange(key, AV{zScore{min}.ToAV()}, AV{zScore{max}.ToAV()}, offset, count, false, skScore)
+	return c.zGeneralRange(key, zScore{min}, zScore{max}, offset, count, false, skScore)
 }
 
 func (c Client) ZREVRANK(key string, member string) (rank int64, ok bool, err error) {
