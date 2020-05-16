@@ -5,7 +5,7 @@
 
 Redimo is a library that allows you to use the Redis API on DynamoDB. The DynamoDB system is excellent at what it does on a specific set of use cases, but is more difficult to use than it should be because the API is very low level and requires a lot of arcane knowledge. The Redis API, on the other hand, deals with familiar data structures (key-value, sets, sorted sets, lists, streams, hash maps) that you can directly map to your application's data. Redimo bridges the two and translates the Redis API operations into space / time / cost-efficient DynamoDB API calls. 
 
-Redimo is especially well suited to serverless environments, since there is no pool of connections to handle and DynamoDB is purpose-built for near-zero management use. But you can use it with regular servers well, especially when you want excellent horizontal scalability.
+Redimo is especially well suited to serverless environments, since there is no pool of connections to handle and DynamoDB is purpose-built for near-zero management use. But you can use it with regular servers well, especially when you want excellent horizontal scalability. See the section on [differences between Redis and DynamoDB](#differences-between-redis-and-dynamodb) below for more information.
 
 ### Licensing 
 The default license is the [GPL-3](https://tldrlegal.com/license/gnu-general-public-license-v3-(gpl-3)), which obligates you to release any software you write with this library under the same license. I'm also offering the following perpetual licenses:
