@@ -24,7 +24,16 @@ The default license is the [GPL-3](https://tldrlegal.com/license/gnu-general-pub
  
  The first priority is to mirror the Redis API as much as possible, even in the cases where that means the DynamoDB mapping is inefficient. After v1, I'd like to add more efficient operations as extra methods.
  
-   
+ ### Limitations
+ Some parts of the Redis API are unfeasible (as far as I know, and as of now) on DynamoDB, like the binary / bit twiddling operations and their derivatives, like `GETBIT`, `SETBIT`, `BITCOUNT`, etc. and HyperLogLog. These have been left out of the API for now. 
+ 
+ TTL operations are possible, but a little more complicated, and will likely be added soon.
+ 
+ Pub/Sub isn't possible as a DynamoDB feature itself, but it should be possible to add integration with AWS IoT Core or similar in the future. This isn't useful in a serverless environment, though, so it's a lower priority. Contact me if you disagree and want this quickly.
+ 
+ Lua Scripting is currently not applicable - the library runs inside your codebase, so anything you wanted to do with Lua would just be done with normal library calls inside your application, with the data loaded in and out of DynamoDB. 
+ 
+ ACLs (access control lists) are not currently supported.  
  
  ### Differences between Redis and DynamoDB
  Why bother with this at all? Why not just use Redis?  
@@ -45,15 +54,6 @@ So there's no clear-cut answer to which is better – it depends entirely on you
 
 If you still need help making a decision, you can contact me at sudhir.j@gmail.com   
    
-### Limitations
-Some parts of the Redis API are unfeasible (as far as I know, and as of now) on DynamoDB, like the binary / bit twiddling operations and their derivatives, like `GETBIT`, `SETBIT`, `BITCOUNT`, etc. and HyperLogLog. These have been left out of the API for now. 
 
-TTL operations are possible, but a little more complicated, and will likely be added soon.
-
-Pub/Sub isn't possible as a DynamoDB feature itself, but it should be possible to add integration with AWS IoT Core or similar in the future. This isn't useful in a serverless environment, though, so it's a lower priority. Contact me if you disagree and want this quickly.
-
-Lua Scripting is currently not applicable - the library runs inside your codebase, so anything you wanted to do with Lua would just be done with normal library calls inside your application, with the data loaded in and out of DynamoDB. 
-
-ACLs (access control lists) are not currently supported.
  
 
