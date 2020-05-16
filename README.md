@@ -37,6 +37,8 @@ The default license is the [GPL-3](https://tldrlegal.com/license/gnu-general-pub
  
  ACLs (access control lists) are not currently supported.  
  
+ Transactions across arbitrary operations, using `MULTI WATCH EXEC`, are not yet supported. Talk to me if you need this. 
+ 
  ### Differences between Redis and DynamoDB
  Why bother with this at all? Why not just use Redis?  
 
@@ -44,7 +46,7 @@ The default license is the [GPL-3](https://tldrlegal.com/license/gnu-general-pub
 
 * Redis is connection based and supports a limited (but pretty large) number of connections. DynamoDB has no such limits, so it's great for serverless or very horizontally scaled deployments.  
 
-* Redis bandwidth is limit by the network interface of the server that it's running on, DynamoDB is distributed and doesn't have hard bandwidth limits. 
+* Redis bandwidth is limited by the network interface of the server that it's running on, DynamoDB is distributed and doesn't have hard bandwidth limits. 
 
 * In Redis all operations run on a single CPU / thread - so each operation is extremely fast, but there's only one operation running at a time. Slow operations, or a large queue, will block other operations. In DynamoDB, each key's operations runs on different machines, so there's no block of any sort across keys. Operations on the same key will block using optimistic concurrency, though - Redimo will try the operation, but will fail if the data has been unexpectedly modified since the last check. The integrity of the data is still preserved, but in DynamoDB there's more probability that lots of operations on the same keys will step on each other's toes.   
 
@@ -56,15 +58,15 @@ The default license is the [GPL-3](https://tldrlegal.com/license/gnu-general-pub
 
 * The persistence guarantees offered by DynamoDB allows you to use the Redimo service as your primary / only ACID database, while Redis has a periodic file system sync (so you might lose data since the last sync). While you can switch Redis to wait for a file system write in all cases or set up a quorum cluster, DynamoDB has much higher reliability, including Multi-AZ guarantees, right out of the box. 
 
-* With Redis you'll need to run servers and either buy or rent fixed units of CPU and RAM, which with DynamoDB you have the option of paying on-demand (per request) or setting up auto-scaling bandwidth slabs. 
+* With Redis you'll need to run servers and either buy or rent fixed units of CPU and RAM, while with DynamoDB you have the option of paying on-demand (per request) or setting up auto-scaling bandwidth slabs. 
 
 * With DynamoDB, being a distributed system, you will not get a lot of the transactional and atomic behaviour that comes freely and easily with Redis. The Redimo library uses whatever transactional APIs are available where necessary, so the limits of those APIs will be passed on to you - in DynamoDB you can only have up to 25 items in a transaction, for example, so the `MSET` operation on has a 25 key limit when using Redimo / DynamoDB. Redis does not have any such limitations.
 
-* DynamoDB is geared towards having lots of small objects across many partitions, while Redis is workload agnostic. For example, with Redis if you can do N writes per second across one or many keys, in DynamoDB you can do only one tenth of that on a single key – but you could do millions of times that across all your keys, if you have a lot of keys.
+* DynamoDB is geared towards having lots of small objects across many partitions, while Redis is workload agnostic. For example, with Redis if you can do N writes per second across one or many keys, in DynamoDB you can do only one tenth of that on a single key – but you could operate at millions of times N across all your keys, if you have a lot of keys.
 
 * In the same vein, Redis allows all keys and values to be up to 512MB (although big keys or values is always a bad idea and will naturally cause bandwidth constraints on a single server) - in DynamoDB your keys (and set members) can only be up to 1KB, while your values can only be up to 400KB in size.
 
-So there's no clear-cut answer to which is better – it depends entirely on your application and expected workload. The point of this library is not to promote one over the other, it's to make your development much easier and more comfortable if you decide to use DynamoDB, because the Redis API is much more approachable and easier to model with.
+So there's no clear-cut answer to which is better – it depends entirely on your application and expected workload. The point of this library is not to promote one over the other – it's to make your development much easier and more comfortable if you decide to use DynamoDB, because the Redis API is much more approachable and easier to model with.
 
 If you still need help with making a decision, you can contact me at sudhir.j@gmail.com   
    
