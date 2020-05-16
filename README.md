@@ -20,9 +20,11 @@ The default license is the [GPL-3](https://tldrlegal.com/license/gnu-general-pub
  All licenses are perpetual and last as long as you use the software. You only need one license per entity (person or company) that owns the code that uses the library. So whether you're an individual, company or consultant / agency, whoever legally owns the code buys one license for all the code they own.
  
  ### Roadmap
- The library is currently in `v0`, so I'm asking for comments and feedback on the interface and data schema. I expect to freeze the API to `v1` on the 1st of July, after which all `v1` releases will be guaranteed not to break backwards compatibility and work on pre-existing `v1` DynamoDB tables without any data migrations.
+ The library is currently in `v0`, so I'm asking for comments and feedback on the interface and data schema. I expect to freeze the API to `v1` on the 1st of July, after which all `v1` releases will be guaranteed not to break backwards compatibility and work on pre-existing `v1` DynamoDB tables without any data migrations. Will also be adding documentation for every method, linking to the corresponding Redis docs and detailing the differences in how they function and what their limitations are.
  
- The first priority is to mirror the Redis API as much as possible, even in the cases where that means the DynamoDB mapping is inefficient. After v1, I'd like to add more efficient operations as extra methods. 
+ The first priority is to mirror the Redis API as much as possible, even in the cases where that means the DynamoDB mapping is inefficient. After v1, I'd like to add more efficient operations as extra methods.
+ 
+   
  
  ### Differences between Redis and DynamoDB
  Why bother with this at all? Why not just use Redis?  
