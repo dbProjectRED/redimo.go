@@ -24,6 +24,8 @@ The default license is the [GPL-3](https://tldrlegal.com/license/gnu-general-pub
  
  The first priority is to mirror the Redis API as much as possible, even in the cases where that means the DynamoDB mapping is inefficient. After v1, I'd like to add more efficient operations as extra methods.
  
+ This library is the Go version, but I'm thinking of building Ruby, JavaScript, Python and Java versions as well. You can contact me if you'd like to prioritise or sponsor any of them.
+ 
  ### Limitations
  Some parts of the Redis API are unfeasible (as far as I know, and as of now) on DynamoDB, like the binary / bit twiddling operations and their derivatives, like `GETBIT`, `SETBIT`, `BITCOUNT`, etc. and HyperLogLog. These have been left out of the API for now. 
  
