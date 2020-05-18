@@ -8,7 +8,9 @@ Redimo is a library that allows you to use the Redis API on DynamoDB. The Dynamo
 Redimo is especially well suited to serverless environments, since there is no pool of connections to handle and DynamoDB is purpose-built for near-zero management use. But you can use it with regular servers well, especially when you want excellent horizontal scalability. See the section on [differences between Redis and DynamoDB](#differences-between-redis-and-dynamodb) below for more information.
 
 ### Licensing 
-The default license is the [Prosperity License](https://prosperitylicense.com/versions/3.0.0), which allows you to use the library for noncommercial purposes and trial it for commercial purposes for 30 days. Please contact me at sudhir.j@gmail.com to purchase a commercial license.
+The default license is the [Prosperity License](https://prosperitylicense.com/versions/3.0.0), which allows you to use the library for noncommercial purposes and trial it for commercial purposes for 30 days. You can purchase a license as an individual developer for USD $25 here – https://licensezero.com/offers/446a2fbe-b920-4875-bf66-f926e6cb06ae 
+
+Please contact me at sudhir.j@gmail.com to purchase a business / company license for your entire organization.
  
  ### Roadmap
  The library is currently in `v0`, so I'm asking for comments and feedback on the interface and data schema. I expect to freeze the API to `v1` on the 1st of July, after which all `v1` releases will be guaranteed not to break backwards compatibility and work on pre-existing `v1` DynamoDB tables without any data migrations. Will also be adding documentation for every method, linking to the corresponding Redis docs and detailing the differences in how they function and what their limitations are.
