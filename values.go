@@ -1,8 +1,8 @@
 package redimo
 
 import (
-	"bytes"
 	"math/big"
+	"reflect"
 	"strconv"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -91,7 +91,5 @@ func (rv ReturnValue) Present() bool {
 }
 
 func (rv ReturnValue) Equals(ov ReturnValue) bool {
-	return bytes.Equal(rv.AV.B, ov.AV.B) &&
-		aws.StringValue(rv.AV.S) == aws.StringValue(ov.AV.S) &&
-		aws.StringValue(rv.AV.N) == aws.StringValue(ov.AV.N)
+	return reflect.DeepEqual(rv.AV, ov.AV)
 }
