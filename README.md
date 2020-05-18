@@ -1,7 +1,7 @@
 # REDIMO
 
 [![Go](https://github.com/sudhirj/redimo.go/workflows/Go/badge.svg)](https://github.com/sudhirj/redimo.go/actions)
-[![GoDoc](https://godoc.org/github.com/sudhirj/redimo.go?status.svg)](https://pkg.go.dev/github.com/sudhirj/redimo.go?tab=doc)
+[![GoDoc](https://godoc.org/github.com/sudhirj/redimo.go?status.svg)](https://godoc.org/github.com/sudhirj/redimo.go)
 
 Redimo is a library that allows you to use the Redis API on DynamoDB. The DynamoDB system is excellent at what it does on a specific set of use cases, but is more difficult to use than it should be because the API is very low level and requires a lot of arcane knowledge. The Redis API, on the other hand, deals with familiar data structures (key-value, sets, sorted sets, lists, streams, hash maps) that you can directly map to your application's data. Redimo bridges the two and translates the Redis API operations into space / time / cost-efficient DynamoDB API calls. 
 
