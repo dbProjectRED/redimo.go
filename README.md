@@ -8,16 +8,7 @@ Redimo is a library that allows you to use the Redis API on DynamoDB. The Dynamo
 Redimo is especially well suited to serverless environments, since there is no pool of connections to handle and DynamoDB is purpose-built for near-zero management use. But you can use it with regular servers well, especially when you want excellent horizontal scalability. See the section on [differences between Redis and DynamoDB](#differences-between-redis-and-dynamodb) below for more information.
 
 ### Licensing 
-The default license is the [GPL-3](https://tldrlegal.com/license/gnu-general-public-license-v3-(gpl-3)), which obligates you to release any software you write with this library under the same license. I'm also offering the following perpetual licenses:
- 
- * [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/) ($9) for hobbyist / educational / charitable use 
- * [LGPL-3.0](https://tldrlegal.com/license/gnu-lesser-general-public-license-v3-(lgpl-3)) ($99) for commercial use  - allows you to use the library without modifying it, without any obligations to release your code
- * [Apache-2.0](https://tldrlegal.com/license/apache-license-2.0-(apache-2.0)) ($999) - a permissive and enterprise-friendly license if you want to make changes to the library or redistribute code with almost no obligations.
- * If you want a different or custom license you can contact me at sudhir.j@gmail.com - but you'll need to bring a lawyer and be ready to pay for mine. 
- 
- Please contact me at sudhir.j@gmail.com and I'll send you an invoice. All licenses are 50% off until the v1 API freeze on the 1st of July. If you're from a developing country, I'm happy to adjust prices to your purchasing power based on the Big Mac Index, so let me know your country and currency.   
- 
- All licenses are perpetual and last as long as you use the software. You only need one license per entity (person or company) that owns the code that uses the library. So whether you're an individual, company or consultant / agency, whoever legally owns the code buys one license for all the code they own.
+The default license is the [Prosperity License](https://prosperitylicense.com/versions/3.0.0), which allows you to use the library for noncommercial purposes and trial it for commercial purposes for 30 days. Please contact me at sudhir.j@gmail.com to purchase a commercial license.
  
  ### Roadmap
  The library is currently in `v0`, so I'm asking for comments and feedback on the interface and data schema. I expect to freeze the API to `v1` on the 1st of July, after which all `v1` releases will be guaranteed not to break backwards compatibility and work on pre-existing `v1` DynamoDB tables without any data migrations. Will also be adding documentation for every method, linking to the corresponding Redis docs and detailing the differences in how they function and what their limitations are.

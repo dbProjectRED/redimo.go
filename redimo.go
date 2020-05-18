@@ -205,7 +205,7 @@ type itemDef struct {
 
 func (i itemDef) eav() map[string]dynamodb.AttributeValue {
 	eav := i.keyDef.toAV()
-	eav[vk] = i.val.AV
+	eav[vk] = i.val.av
 
 	return eav
 }

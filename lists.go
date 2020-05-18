@@ -47,7 +47,7 @@ func (ln lNode) toAV() map[string]dynamodb.AttributeValue {
 	avm[sk] = StringValue{ln.address}.ToAV()
 	avm[skLeft] = StringValue{ln.left}.ToAV()
 	avm[skRight] = StringValue{ln.right}.ToAV()
-	avm[vk] = ln.value.AV
+	avm[vk] = ln.value.av
 
 	return avm
 }
