@@ -70,6 +70,7 @@ const (
 
 func (c Client) GEOADD(key string, members map[string]GLocation) (newlyAddedMembers map[string]GLocation, err error) {
 	newlyAddedMembers = make(map[string]GLocation)
+
 	for member, location := range members {
 		builder := newExpresionBuilder()
 		builder.updateSetAV(skGeoCell, location.toAV())

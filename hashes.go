@@ -25,36 +25,30 @@ func (c Client) HGET(key string, field string) (val ReturnValue, err error) {
 	return
 }
 
-func (c Client) HSET(key string, fieldValues map[string]Value) (savedCount int64, err error) {
-	items := make([]dynamodb.WriteRequest, 0, len(fieldValues))
+func (c Client) HSET(key string, fieldValues map[string]Value) (newlySavedFields map[string]Value, err error) {
+	newlySavedFields = make(map[string]Value)
 
-	for field, v := range fieldValues {
-		items = append(items, dynamodb.WriteRequest{
-			PutRequest: &dynamodb.PutRequest{
-				Item: itemDef{
-					keyDef: keyDef{pk: key, sk: field},
-					val:    ReturnValue{v.ToAV()},
-				}.eav(),
-			},
-		})
-	}
+	for field, value := range fieldValues {
+		builder := newExpresionBuilder()
+		builder.updateSetAV(vk, value.ToAV())
 
-	requestMap := map[string][]dynamodb.WriteRequest{}
-	requestMap[c.table] = items
-
-	for len(requestMap[c.table]) > 0 {
-		attempting := len(requestMap[c.table])
-		resp, err := c.ddbClient.BatchWriteItemRequest(&dynamodb.BatchWriteItemInput{
-			RequestItems: requestMap,
+		resp, err := c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
+			ConditionExpression:       builder.conditionExpression(),
+			ExpressionAttributeNames:  builder.expressionAttributeNames(),
+			ExpressionAttributeValues: builder.expressionAttributeValues(),
+			Key:                       keyDef{pk: key, sk: field}.toAV(),
+			ReturnValues:              dynamodb.ReturnValueAllOld,
+			TableName:                 aws.String(c.table),
+			UpdateExpression:          builder.updateExpression(),
 		}).Send(context.TODO())
 
 		if err != nil {
-			return savedCount, err
+			return newlySavedFields, err
 		}
 
-		leftovers := len(resp.UnprocessedItems[c.table])
-		savedCount = savedCount + int64(attempting) - int64(leftovers)
-		requestMap = resp.UnprocessedItems
+		if len(resp.Attributes) < 1 {
+			newlySavedFields[field] = value
+		}
 	}
 
 	return
@@ -118,7 +112,7 @@ func (c Client) HMGET(key string, fields ...string) (values map[string]ReturnVal
 	return
 }
 
-func (c Client) HDEL(key string, fields ...string) (deletedCount int64, err error) {
+func (c Client) HDEL(key string, fields ...string) (deletedFields []string, err error) {
 	for _, field := range fields {
 		resp, err := c.ddbClient.DeleteItemRequest(&dynamodb.DeleteItemInput{
 			Key: keyDef{
@@ -129,11 +123,11 @@ func (c Client) HDEL(key string, fields ...string) (deletedCount int64, err erro
 			TableName:    aws.String(c.table),
 		}).Send(context.TODO())
 		if err != nil {
-			return deletedCount, err
+			return deletedFields, err
 		}
 
 		if len(resp.Attributes) > 0 {
-			deletedCount++
+			deletedFields = append(deletedFields, field)
 		}
 	}
 

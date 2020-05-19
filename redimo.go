@@ -173,13 +173,6 @@ type itemDef struct {
 	val ReturnValue
 }
 
-func (i itemDef) eav() map[string]dynamodb.AttributeValue {
-	eav := i.keyDef.toAV()
-	eav[vk] = i.val.av
-
-	return eav
-}
-
 func parseKey(avm map[string]dynamodb.AttributeValue) keyDef {
 	return keyDef{
 		pk: aws.StringValue(avm[pk].S),

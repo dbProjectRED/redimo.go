@@ -8,9 +8,14 @@ import (
 
 func TestBasicHashes(t *testing.T) {
 	c := newClient(t)
-	savedCount, err := c.HSET("k1", map[string]Value{"f1": StringValue{"v1"}, "f2": StringValue{"v2"}})
+	savedFields, err := c.HSET("k1", map[string]Value{"f1": StringValue{"v1"}})
 	assert.NoError(t, err)
-	assert.EqualValues(t, 2, savedCount)
+	assert.EqualValues(t, 1, len(savedFields))
+
+	savedFields, err = c.HSET("k1", map[string]Value{"f1": StringValue{"v1"}, "f2": StringValue{"v2"}})
+	assert.NoError(t, err)
+	assert.EqualValues(t, 1, len(savedFields))
+	assert.Equal(t, savedFields["f2"], StringValue{"v2"})
 
 	val, err := c.HGET("k1", "f1")
 	assert.NoError(t, err)
@@ -45,9 +50,10 @@ func TestBasicHashes(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(2), count)
 
-	delCount, err := c.HDEL("k1", "f2", "f1")
+	deletedFields, err := c.HDEL("k1", "f2", "f1")
 	assert.NoError(t, err)
-	assert.Equal(t, int64(2), delCount)
+	assert.Equal(t, 2, len(deletedFields))
+	assert.ElementsMatch(t, []string{"f1", "f2"}, deletedFields)
 
 	val, err = c.HGET("k1", "f2")
 	assert.NoError(t, err)
