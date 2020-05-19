@@ -33,18 +33,16 @@ func TestLBasics(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"twinkle", "twinkle", "little", "star"}, readStrings(elements))
 
-	element, found, err := c.LPOP("l1")
+	element, err := c.LPOP("l1")
 	assert.NoError(t, err)
-	assert.True(t, found)
 	assert.Equal(t, "twinkle", element.String())
 
 	elements, err = c.LRANGE("l1", 0, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"twinkle", "little", "star"}, readStrings(elements))
 
-	element, found, err = c.RPOP("l1")
+	element, err = c.RPOP("l1")
 	assert.NoError(t, err)
-	assert.True(t, found)
 	assert.Equal(t, "star", element.String())
 
 	elements, err = c.LRANGE("l1", 0, -1)
@@ -102,6 +100,14 @@ func TestLBasics(t *testing.T) {
 	elements, err = c.LRANGE("nonexistentlist", 0, -1)
 	assert.NoError(t, err)
 	assert.Empty(t, elements)
+
+	element, err = c.LPOP("nonexistent")
+	assert.NoError(t, err)
+	assert.True(t, element.Empty())
+
+	element, err = c.RPOP("nonexistent")
+	assert.NoError(t, err)
+	assert.True(t, element.Empty())
 }
 
 func readStrings(elements []ReturnValue) (strs []string) {
@@ -123,18 +129,16 @@ func TestRPOPLPUSH(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(4), length)
 
-	element, ok, err := c.RPOPLPUSH("l1", "l1")
+	element, err := c.RPOPLPUSH("l1", "l1")
 	assert.NoError(t, err)
-	assert.True(t, ok)
 	assert.Equal(t, "four", element.String())
 
 	elements, err := c.LRANGE("l1", 0, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"four", "one", "two", "three"}, readStrings(elements))
 
-	element, ok, err = c.RPOPLPUSH("l1", "l2")
+	element, err = c.RPOPLPUSH("l1", "l2")
 	assert.NoError(t, err)
-	assert.True(t, ok)
 	assert.Equal(t, "three", element.String())
 
 	elements, err = c.LRANGE("l1", 0, -1)
@@ -145,18 +149,16 @@ func TestRPOPLPUSH(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"three", "five", "six", "seven", "eight"}, readStrings(elements))
 
-	element, ok, err = c.RPOPLPUSH("l1", "l1")
+	element, err = c.RPOPLPUSH("l1", "l1")
 	assert.NoError(t, err)
-	assert.True(t, ok)
 	assert.Equal(t, "two", element.String())
 
 	elements, err = c.LRANGE("l1", 0, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"two", "four", "one"}, readStrings(elements))
 
-	element, ok, err = c.RPOPLPUSH("l1", "newList")
+	element, err = c.RPOPLPUSH("l1", "newList")
 	assert.NoError(t, err)
-	assert.True(t, ok)
 	assert.Equal(t, "one", element.String())
 
 	elements, err = c.LRANGE("l1", 0, -1)
@@ -168,16 +170,15 @@ func TestRPOPLPUSH(t *testing.T) {
 	assert.Equal(t, []string{"one"}, readStrings(elements))
 
 	// Two item single list rotation - they should simply switch places
-	element, ok, err = c.RPOPLPUSH("l1", "l1")
+	element, err = c.RPOPLPUSH("l1", "l1")
 	assert.NoError(t, err)
-	assert.True(t, ok)
 	assert.Equal(t, "four", element.String())
 
 	elements, err = c.LRANGE("l1", 0, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"four", "two"}, readStrings(elements))
 
-	_, _, err = c.LPOP("l1")
+	_, err = c.LPOP("l1")
 	assert.NoError(t, err)
 
 	elements, err = c.LRANGE("l1", 0, -1)
@@ -185,9 +186,8 @@ func TestRPOPLPUSH(t *testing.T) {
 	assert.Equal(t, []string{"two"}, readStrings(elements))
 
 	// Single element single list rotation is a no-op
-	element, ok, err = c.RPOPLPUSH("l1", "l1")
+	element, err = c.RPOPLPUSH("l1", "l1")
 	assert.NoError(t, err)
-	assert.True(t, ok)
 	assert.Equal(t, "two", element.String())
 
 	elements, err = c.LRANGE("l1", 0, -1)
@@ -201,54 +201,49 @@ func TestListIndexBasedCRUD(t *testing.T) {
 	_, err := c.RPUSH("l1", StringValue{"inty"}, StringValue{"minty"}, StringValue{"papa"}, StringValue{"tinty"})
 	assert.NoError(t, err)
 
-	element, found, err := c.LINDEX("l1", 0)
+	element, err := c.LINDEX("l1", 0)
 	assert.NoError(t, err)
-	assert.True(t, found)
 	assert.Equal(t, "inty", element.String())
 
-	element, found, err = c.LINDEX("l1", 3)
+	element, err = c.LINDEX("l1", 3)
 	assert.NoError(t, err)
-	assert.True(t, found)
 	assert.Equal(t, "tinty", element.String())
 
-	_, found, err = c.LINDEX("l1", 4)
+	element, err = c.LINDEX("l1", 4)
 	assert.NoError(t, err)
-	assert.False(t, found)
+	assert.False(t, element.Present())
 
-	_, found, err = c.LINDEX("l1", 42)
+	element, err = c.LINDEX("l1", 42)
 	assert.NoError(t, err)
-	assert.False(t, found)
+	assert.False(t, element.Present())
 
-	element, found, err = c.LINDEX("l1", -1)
+	element, err = c.LINDEX("l1", -1)
 	assert.NoError(t, err)
-	assert.True(t, found)
+	assert.True(t, element.Present())
 	assert.Equal(t, "tinty", element.String())
 
-	element, found, err = c.LINDEX("l1", -4)
+	element, err = c.LINDEX("l1", -4)
 	assert.NoError(t, err)
-	assert.True(t, found)
 	assert.Equal(t, "inty", element.String())
 
-	_, found, err = c.LINDEX("l1", -42)
+	element, err = c.LINDEX("l1", -42)
 	assert.NoError(t, err)
-	assert.False(t, found)
+	assert.True(t, element.Empty())
 
 	ok, err := c.LSET("l1", 1, "monty")
 	assert.NoError(t, err)
 	assert.True(t, ok)
 
-	element, found, err = c.LINDEX("l1", 1)
+	element, err = c.LINDEX("l1", 1)
 	assert.NoError(t, err)
-	assert.True(t, found)
 	assert.Equal(t, "monty", element.String())
 
 	ok, err = c.LSET("l1", -2, "mama")
 	assert.NoError(t, err)
 	assert.True(t, ok)
 
-	element, found, err = c.LINDEX("l1", -2)
+	element, err = c.LINDEX("l1", -2)
 	assert.NoError(t, err)
-	assert.True(t, found)
 	assert.Equal(t, "mama", element.String())
 
 	ok, err = c.LSET("l1", 42, "no chance")

@@ -221,13 +221,13 @@ func lParseNode(avm map[string]dynamodb.AttributeValue) (ln listNode) {
 	return
 }
 
-func (c Client) LINDEX(key string, index int64) (element ReturnValue, found bool, err error) {
-	node, found, err := c.listNodeAtIndex(key, index)
+func (c Client) LINDEX(key string, index int64) (element ReturnValue, err error) {
+	node, _, err := c.listNodeAtIndex(key, index)
 	if err != nil {
 		return
 	}
 
-	return node.value, found, err
+	return node.value, err
 }
 
 func (c Client) listNodeAtIndex(key string, index int64) (node listNode, found bool, err error) {
@@ -342,8 +342,9 @@ func (c Client) LLEN(key string) (length int64, err error) {
 	return
 }
 
-func (c Client) LPOP(key string) (element ReturnValue, ok bool, err error) {
-	return c.listPop(key, Left)
+func (c Client) LPOP(key string) (element ReturnValue, err error) {
+	element, _, err = c.listPop(key, Left)
+	return
 }
 
 func (c Client) listPop(key string, side LSide) (element ReturnValue, ok bool, err error) {
@@ -611,9 +612,9 @@ func (c Client) LREM(key string, side LSide, element Value) (newLength int64, do
 
 	switch {
 	case outgoingNode.isHead():
-		_, done, err = c.LPOP(key)
+		_, done, err = c.listPop(key, Left)
 	case outgoingNode.isTail():
-		_, done, err = c.RPOP(key)
+		_, done, err = c.listPop(key, Right)
 	default:
 		leftKeyNode, found, err := c.listGetByAddress(key, outgoingNode.left)
 		if !found || err != nil {
@@ -678,11 +679,12 @@ func (c Client) LSET(key string, index int64, element string) (ok bool, err erro
 	return true, nil
 }
 
-func (c Client) RPOP(key string) (element ReturnValue, ok bool, err error) {
-	return c.listPop(key, Right)
+func (c Client) RPOP(key string) (element ReturnValue, err error) {
+	element, _, err = c.listPop(key, Right)
+	return
 }
 
-func (c Client) RPOPLPUSH(sourceKey string, destinationKey string) (element ReturnValue, ok bool, err error) {
+func (c Client) RPOPLPUSH(sourceKey string, destinationKey string) (element ReturnValue, err error) {
 	if sourceKey == destinationKey {
 		return c.listRotate(sourceKey)
 	}
@@ -708,7 +710,7 @@ func (c Client) RPOPLPUSH(sourceKey string, destinationKey string) (element Retu
 	return
 }
 
-func (c Client) listRotate(key string) (element ReturnValue, ok bool, err error) {
+func (c Client) listRotate(key string) (element ReturnValue, err error) {
 	var actions []dynamodb.TransactWriteItem
 
 	rightEnd, ok, err := c.listFindEnd(key, Right)
@@ -735,11 +737,11 @@ func (c Client) listRotate(key string) (element ReturnValue, ok bool, err error)
 	case leftEnd.right == rightEnd.left:
 		middle, ok, err := c.listGetByAddress(key, leftEnd.right)
 		if err != nil {
-			return element, ok, err
+			return element, err
 		}
 
 		if !ok {
-			return element, ok, errors.New("concurrent modification")
+			return element, errors.New("concurrent modification")
 		}
 
 		actions = append(actions, leftEnd.updateBothSidesAction(rightEnd.address, middle.address, c.table))
@@ -750,11 +752,11 @@ func (c Client) listRotate(key string) (element ReturnValue, ok bool, err error)
 	default:
 		penultimateRight, ok, err := c.listGetByAddress(key, rightEnd.left)
 		if err != nil {
-			return element, ok, err
+			return element, err
 		}
 
 		if !ok {
-			return element, ok, errors.New("concurrent modification")
+			return element, errors.New("concurrent modification")
 		}
 
 		actions = append(actions, leftEnd.updateSideAction(Left, rightEnd.address, c.table))
