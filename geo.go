@@ -68,26 +68,32 @@ const (
 	Feet       GUnit = 0.3048
 )
 
-func (c Client) GEOADD(key string, members map[string]GLocation) (addedCount int64, err error) {
+func (c Client) GEOADD(key string, members map[string]GLocation) (newlyAddedMembers map[string]GLocation, err error) {
+	newlyAddedMembers = make(map[string]GLocation)
 	for member, location := range members {
 		builder := newExpresionBuilder()
 		builder.updateSetAV(skGeoCell, location.toAV())
 
-		_, err = c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
+		resp, err := c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
 			ConditionExpression:       builder.conditionExpression(),
 			ExpressionAttributeNames:  builder.expressionAttributeNames(),
 			ExpressionAttributeValues: builder.expressionAttributeValues(),
 			Key:                       keyDef{pk: key, sk: member}.toAV(),
+			ReturnValues:              dynamodb.ReturnValueAllOld,
 			TableName:                 aws.String(c.table),
 			UpdateExpression:          builder.updateExpression(),
 		}).Send(context.TODO())
 
 		if err != nil {
-			return addedCount, err
+			return newlyAddedMembers, err
+		}
+
+		if len(resp.Attributes) < 1 {
+			newlyAddedMembers[member] = location
 		}
 	}
 
-	return addedCount, nil
+	return newlyAddedMembers, nil
 }
 
 func (c Client) GEODIST(key string, member1, member2 string, unit GUnit) (distance float64, ok bool, err error) {

@@ -25,8 +25,15 @@ func TestGeoBasics(t *testing.T) {
 		"Palermo": {38.115556, 13.361389},
 		"Catania": {37.502669, 15.087269},
 	}
-	_, err := c.GEOADD("Sicily", startingMap)
+	addedMembers, err := c.GEOADD("Sicily", map[string]GLocation{
+		"Catania": {37.502669, 15.087269},
+	})
 	assert.NoError(t, err)
+	assert.Equal(t, 1, len(addedMembers))
+
+	addedMembers, err = c.GEOADD("Sicily", startingMap)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(addedMembers))
 
 	count, err := c.ZCARD("Sicily")
 	assert.NoError(t, err)
