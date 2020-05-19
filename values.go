@@ -68,6 +68,10 @@ func (rv ReturnValue) String() string {
 }
 
 func (rv ReturnValue) Int() int64 {
+	if aws.StringValue(rv.av.N) == "" {
+		return 0
+	}
+
 	f, _, _ := new(big.Float).Parse(aws.StringValue(rv.av.N), 10)
 	i, _ := f.Int64()
 

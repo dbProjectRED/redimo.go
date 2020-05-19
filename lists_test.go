@@ -17,15 +17,17 @@ func TestLBasics(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"twinkle"}, readStrings(elements))
 
-	_, err = c.LPUSH("l1", StringValue{"twinkle"})
+	length, err = c.LPUSH("l1", StringValue{"twinkle"})
 	assert.NoError(t, err)
+	assert.Equal(t, int64(2), length)
 
 	elements, err = c.LRANGE("l1", 0, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"twinkle", "twinkle"}, readStrings(elements))
 
-	_, err = c.RPUSH("l1", StringValue{"little"}, StringValue{"star"})
+	length, err = c.RPUSH("l1", StringValue{"little"}, StringValue{"star"})
 	assert.NoError(t, err)
+	assert.Equal(t, int64(4), length)
 
 	elements, err = c.LRANGE("l1", 0, -1)
 	assert.NoError(t, err)
@@ -53,15 +55,17 @@ func TestLBasics(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(2), count)
 
-	_, err = c.LPUSHX("l1", StringValue{"wrinkle"})
+	length, err = c.LPUSHX("l1", StringValue{"wrinkle"})
 	assert.NoError(t, err)
+	assert.Equal(t, int64(3), length)
 
 	elements, err = c.LRANGE("l1", 0, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"wrinkle", "twinkle", "little"}, readStrings(elements))
 
-	_, err = c.RPUSHX("l1", StringValue{"car"})
+	length, err = c.RPUSHX("l1", StringValue{"car"})
 	assert.NoError(t, err)
+	assert.Equal(t, int64(4), length)
 
 	elements, err = c.LRANGE("l1", 0, -1)
 	assert.NoError(t, err)
@@ -87,11 +91,13 @@ func TestLBasics(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Empty(t, elements)
 
-	_, err = c.RPUSHX("nonexistentlist", StringValue{"car"})
+	length, err = c.RPUSHX("nonexistentlist", StringValue{"car"})
 	assert.NoError(t, err)
+	assert.Equal(t, int64(0), length)
 
-	_, err = c.LPUSHX("nonexistentlist", StringValue{"car"})
+	length, err = c.LPUSHX("nonexistentlist", StringValue{"car"})
 	assert.NoError(t, err)
+	assert.Equal(t, int64(0), length)
 
 	elements, err = c.LRANGE("nonexistentlist", 0, -1)
 	assert.NoError(t, err)
@@ -109,11 +115,13 @@ func readStrings(elements []ReturnValue) (strs []string) {
 func TestRPOPLPUSH(t *testing.T) {
 	c := newClient(t)
 
-	_, err := c.RPUSH("l1", StringValue{"one"}, StringValue{"two"}, StringValue{"three"}, StringValue{"four"})
+	length, err := c.RPUSH("l1", StringValue{"one"}, StringValue{"two"}, StringValue{"three"}, StringValue{"four"})
 	assert.NoError(t, err)
+	assert.Equal(t, int64(4), length)
 
-	_, err = c.RPUSH("l2", StringValue{"five"}, StringValue{"six"}, StringValue{"seven"}, StringValue{"eight"})
+	length, err = c.RPUSH("l2", StringValue{"five"}, StringValue{"six"}, StringValue{"seven"}, StringValue{"eight"})
 	assert.NoError(t, err)
+	assert.Equal(t, int64(4), length)
 
 	element, ok, err := c.RPOPLPUSH("l1", "l1")
 	assert.NoError(t, err)
@@ -259,81 +267,99 @@ func TestListIndexBasedCRUD(t *testing.T) {
 func TestListValueBasedCRUD(t *testing.T) {
 	c := newClient(t)
 
-	_, err := c.RPUSH("l1", StringValue{"beta"}, StringValue{"delta"}, StringValue{"phi"})
+	length, err := c.RPUSH("l1", StringValue{"beta"}, StringValue{"delta"}, StringValue{"phi"})
 	assert.NoError(t, err)
+	assert.Equal(t, int64(3), length)
 
 	elements, err := c.LRANGE("l1", 0, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"beta", "delta", "phi"}, readStrings(elements))
 
-	_, ok, err := c.LINSERT("l1", Left, StringValue{"delta"}, StringValue{"gamma"})
+	length, ok, err := c.LINSERT("l1", Left, StringValue{"delta"}, StringValue{"gamma"})
 	assert.NoError(t, err)
 	assert.True(t, ok)
+	assert.Equal(t, int64(4), length)
 
 	elements, err = c.LRANGE("l1", 0, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"beta", "gamma", "delta", "phi"}, readStrings(elements))
 
-	_, ok, err = c.LINSERT("l1", Left, StringValue{"beta"}, StringValue{"alpha"})
+	length, ok, err = c.LINSERT("l1", Left, StringValue{"beta"}, StringValue{"alpha"})
 	assert.NoError(t, err)
 	assert.True(t, ok)
+	assert.Equal(t, int64(5), length)
 
 	elements, err = c.LRANGE("l1", 0, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"alpha", "beta", "gamma", "delta", "phi"}, readStrings(elements))
 
-	_, ok, err = c.LINSERT("l1", Right, StringValue{"phi"}, StringValue{"omega"})
+	length, ok, err = c.LINSERT("l1", Right, StringValue{"phi"}, StringValue{"omega"})
 	assert.NoError(t, err)
 	assert.True(t, ok)
+	assert.Equal(t, int64(6), length)
 
 	elements, err = c.LRANGE("l1", 0, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"alpha", "beta", "gamma", "delta", "phi", "omega"}, readStrings(elements))
 
-	_, ok, err = c.LREM("l1", Left, StringValue{"gamma"})
+	length, ok, err = c.LREM("l1", Left, StringValue{"gamma"})
 	assert.NoError(t, err)
 	assert.True(t, ok)
+	assert.Equal(t, int64(5), length)
 
 	elements, err = c.LRANGE("l1", 0, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"alpha", "beta", "delta", "phi", "omega"}, readStrings(elements))
 
-	_, ok, err = c.LREM("l1", Left, StringValue{"omega"})
+	length, ok, err = c.LREM("l1", Left, StringValue{"omega"})
 	assert.NoError(t, err)
 	assert.True(t, ok)
+	assert.Equal(t, int64(4), length)
 
 	elements, err = c.LRANGE("l1", 0, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"alpha", "beta", "delta", "phi"}, readStrings(elements))
 
-	_, ok, err = c.LREM("l1", Left, StringValue{"alpha"})
+	length, ok, err = c.LREM("l1", Left, StringValue{"alpha"})
 	assert.NoError(t, err)
 	assert.True(t, ok)
+	assert.Equal(t, int64(3), length)
 
 	elements, err = c.LRANGE("l1", 0, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"beta", "delta", "phi"}, readStrings(elements))
 
-	_, err = c.RPUSH("l1", StringValue{"delta"}, StringValue{"gamma"}, StringValue{"delta"}, StringValue{"mu"})
+	length, err = c.RPUSH("l1", StringValue{"delta"}, StringValue{"gamma"}, StringValue{"delta"}, StringValue{"mu"})
 	assert.NoError(t, err)
+	assert.Equal(t, int64(7), length)
 
 	elements, err = c.LRANGE("l1", 0, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"beta", "delta", "phi", "delta", "gamma", "delta", "mu"}, readStrings(elements))
 
-	_, ok, err = c.LREM("l1", Left, StringValue{"delta"})
+	length, ok, err = c.LREM("l1", Left, StringValue{"delta"})
 	assert.NoError(t, err)
 	assert.True(t, ok)
+	assert.Equal(t, int64(6), length)
 
 	elements, err = c.LRANGE("l1", 0, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"beta", "phi", "delta", "gamma", "delta", "mu"}, readStrings(elements))
 
-	_, ok, err = c.LREM("l1", Right, StringValue{"delta"})
+	length, ok, err = c.LREM("l1", Right, StringValue{"delta"})
 	assert.NoError(t, err)
 	assert.True(t, ok)
+	assert.Equal(t, int64(5), length)
 
 	elements, err = c.LRANGE("l1", 0, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"beta", "phi", "delta", "gamma", "mu"}, readStrings(elements))
+
+	_, ok, err = c.LINSERT("l1", Left, StringValue{"no such element"}, StringValue{"alpha"})
+	assert.NoError(t, err)
+	assert.False(t, ok)
+
+	_, ok, err = c.LREM("l1", Left, StringValue{"no such element"})
+	assert.NoError(t, err)
+	assert.False(t, ok)
 }

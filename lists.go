@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -40,8 +41,15 @@ type listNode struct {
 	value   ReturnValue
 }
 
-const null = "NULL"
+const listNull = "NULL"
 const capCount = 2
+
+func (c Client) listCountKey(key string) keyDef {
+	return keyDef{
+		pk: strings.Join([]string{"_redimo", key}, "/"),
+		sk: "count",
+	}
+}
 
 func (ln listNode) toAV() map[string]dynamodb.AttributeValue {
 	avm := map[string]dynamodb.AttributeValue{}
@@ -135,7 +143,7 @@ func (ln listNode) updateBothSidesAction(newLeft string, newRight string, table 
 	updater.updateSET(skLeft, StringValue{newLeft})
 	updater.updateSET(skRight, StringValue{newRight})
 
-	if newLeft == null || newRight == null {
+	if newLeft == listNull || newRight == listNull {
 		updater.updateSET(skEndMarker, IntValue{1})
 	} else {
 		updater.updateSET(skEndMarker, IntValue{0})
@@ -159,7 +167,7 @@ func (ln listNode) updateSideAction(side LSide, newAddress string, table string)
 	updater.addConditionEquality(ln.nextAttr(side), StringValue{ln.next(side)})
 	updater.updateSET(ln.prevAttr(side), StringValue{newAddress})
 
-	if newAddress == null || ln.next(side) == null {
+	if newAddress == listNull || ln.next(side) == listNull {
 		updater.updateSET(skEndMarker, IntValue{1})
 	} else {
 		updater.updateSET(skEndMarker, IntValue{0})
@@ -178,11 +186,11 @@ func (ln listNode) updateSideAction(side LSide, newAddress string, table string)
 }
 
 func (ln listNode) isTail() bool {
-	return ln.right == null
+	return ln.right == listNull
 }
 
 func (ln listNode) isHead() bool {
-	return ln.left == null
+	return ln.left == listNull
 }
 
 func (ln listNode) putAction(table string) dynamodb.TransactWriteItem {
@@ -260,8 +268,10 @@ func (c Client) LINSERT(key string, side LSide, pivot, element Value) (newLength
 	switch {
 	case pivotNode.isHead() && side == Left:
 		_, err = c.LPUSHX(key, element)
+		done = true
 	case pivotNode.isTail() && side == Right:
 		_, err = c.RPUSHX(key, element)
+		done = true
 	default:
 		otherNode, ok, err := c.listGetByAddress(key, pivotNode.prev(side))
 		if err != nil || !ok {
@@ -279,15 +289,27 @@ func (c Client) LINSERT(key string, side LSide, pivot, element Value) (newLength
 		actions = append(actions, otherNode.updateSideAction(side.otherSide(), newNode.address, c.table))
 		actions = append(actions, pivotNode.updateSideAction(side, newNode.address, c.table))
 		actions = append(actions, newNode.putAction(c.table))
+		actions = append(actions, c.listCountDeltaAction(key, 1))
+	}
+
+	if err != nil {
+		return newLength, done, err
 	}
 
 	if len(actions) > 0 {
 		_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
 			TransactItems: actions,
 		}).Send(context.TODO())
+		if err != nil {
+			return newLength, done, err
+		}
+
+		done = true
 	}
 
-	return newLength, true, err
+	newLength, err = c.LLEN(key)
+
+	return newLength, done, err
 }
 
 func (c Client) listNodeAtPivot(key string, pivot Value, side LSide) (node listNode, found bool, err error) {
@@ -308,7 +330,16 @@ func (c Client) listNodeAtPivot(key string, pivot Value, side LSide) (node listN
 }
 
 func (c Client) LLEN(key string) (length int64, err error) {
-	return c.HLEN(key)
+	resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
+		ConsistentRead: aws.Bool(true),
+		Key:            c.listCountKey(key).toAV(),
+		TableName:      aws.String(c.table),
+	}).Send(context.TODO())
+	if err == nil {
+		length = parseItem(resp.Item).val.Int()
+	}
+
+	return
 }
 
 func (c Client) LPOP(key string) (element ReturnValue, ok bool, err error) {
@@ -341,7 +372,7 @@ func (c Client) listPopActions(key string, side LSide) (element ReturnValue, act
 	element = endNode.value
 
 	penultimateNodeAddress := endNode.next(side)
-	if penultimateNodeAddress != null {
+	if penultimateNodeAddress != listNull {
 		penultimateKeyNode, found, err := c.listGetByAddress(key, penultimateNodeAddress)
 		if !found || err != nil {
 			return element, actions, false, err
@@ -349,10 +380,11 @@ func (c Client) listPopActions(key string, side LSide) (element ReturnValue, act
 
 		penultimateKeyNode.setPrev(side, endNode.address)
 
-		actions = append(actions, penultimateKeyNode.updateSideAction(side, null, c.table))
+		actions = append(actions, penultimateKeyNode.updateSideAction(side, listNull, c.table))
 	}
 
 	actions = append(actions, endNode.deleteAction(c.table))
+	actions = append(actions, c.listCountDeltaAction(key, -1))
 
 	return
 }
@@ -363,8 +395,9 @@ func (c Client) LPUSH(key string, elements ...Value) (newLength int64, err error
 		if err != nil {
 			return newLength, err
 		}
-		newLength++
 	}
+
+	newLength, err = c.LLEN(key)
 
 	return
 }
@@ -404,19 +437,34 @@ func (c Client) listPushActions(key string, element Value, side LSide, flags Fla
 	if existingList {
 		node.address = ulid.MustNew(ulid.Now(), rand.Reader).String()
 		node.setNext(side, currentEndNode.address)
-		node.setPrev(side, null)
+		node.setPrev(side, listNull)
 
 		actions = append(actions, currentEndNode.updateSideAction(side, node.address, c.table))
 	} else {
 		// start the list with a constant address - this prevents multiple calls from overwriting it
 		node.address = key
-		node.left = null
-		node.right = null
+		node.left = listNull
+		node.right = listNull
 	}
 
 	actions = append(actions, node.putAction(c.table))
 
+	actions = append(actions, c.listCountDeltaAction(key, 1))
+
 	return
+}
+
+func (c Client) listCountDeltaAction(key string, delta int64) dynamodb.TransactWriteItem {
+	return dynamodb.TransactWriteItem{
+		Update: &dynamodb.Update{
+			ExpressionAttributeValues: map[string]dynamodb.AttributeValue{
+				":delta": IntValue{delta}.ToAV(),
+			},
+			Key:              c.listCountKey(key).toAV(),
+			TableName:        aws.String(c.table),
+			UpdateExpression: aws.String(fmt.Sprintf("ADD %v :delta", vk)),
+		},
+	}
 }
 
 func (c Client) listFindEnd(key string, side LSide) (node listNode, found bool, err error) {
@@ -446,7 +494,7 @@ func (c Client) listFindEnd(key string, side LSide) (node listNode, found bool, 
 			return
 		}
 
-		if node.prev(side) == null {
+		if node.prev(side) == listNull {
 			return node, true, nil
 		}
 	}
@@ -482,8 +530,9 @@ func (c Client) LPUSHX(key string, elements ...Value) (newLength int64, err erro
 		if err != nil {
 			return newLength, err
 		}
-		newLength++
 	}
+
+	newLength, err = c.LLEN(key)
 
 	return
 }
@@ -523,7 +572,7 @@ func (c Client) LRANGE(key string, start, stop int64) (elements []ReturnValue, e
 			node := lParseNode(rawNode)
 			nodeMap[node.address] = node
 
-			if node.left == null {
+			if node.left == listNull {
 				headAddress = node.address
 			}
 		}
@@ -580,16 +629,25 @@ func (c Client) LREM(key string, side LSide, element Value) (newLength int64, do
 		actions = append(actions, leftKeyNode.updateSideAction(Right, rightKeyNode.address, c.table))
 		actions = append(actions, rightKeyNode.updateSideAction(Left, leftKeyNode.address, c.table))
 		actions = append(actions, outgoingNode.deleteAction(c.table))
+		actions = append(actions, c.listCountDeltaAction(key, -1))
+	}
+
+	if err != nil {
+		return newLength, done, err
 	}
 
 	if len(actions) > 0 {
 		_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
 			TransactItems: actions,
 		}).Send(context.TODO())
-		if err == nil {
-			done = true
+		if err != nil {
+			return newLength, done, err
 		}
+
+		done = true
 	}
+
+	newLength, err = c.LLEN(key)
 
 	return newLength, done, err
 }
@@ -670,8 +728,8 @@ func (c Client) listRotate(key string) (element ReturnValue, ok bool, err error)
 		// no action to take
 
 	case leftEnd.right == rightEnd.address:
-		actions = append(actions, leftEnd.updateBothSidesAction(rightEnd.address, null, c.table))
-		actions = append(actions, rightEnd.updateBothSidesAction(null, leftEnd.address, c.table))
+		actions = append(actions, leftEnd.updateBothSidesAction(rightEnd.address, listNull, c.table))
+		actions = append(actions, rightEnd.updateBothSidesAction(listNull, leftEnd.address, c.table))
 		element = rightEnd.value
 
 	case leftEnd.right == rightEnd.left:
@@ -685,8 +743,8 @@ func (c Client) listRotate(key string) (element ReturnValue, ok bool, err error)
 		}
 
 		actions = append(actions, leftEnd.updateBothSidesAction(rightEnd.address, middle.address, c.table))
-		actions = append(actions, rightEnd.updateBothSidesAction(null, leftEnd.address, c.table))
-		actions = append(actions, middle.updateBothSidesAction(leftEnd.address, null, c.table))
+		actions = append(actions, rightEnd.updateBothSidesAction(listNull, leftEnd.address, c.table))
+		actions = append(actions, middle.updateBothSidesAction(leftEnd.address, listNull, c.table))
 		element = rightEnd.value
 
 	default:
@@ -700,8 +758,8 @@ func (c Client) listRotate(key string) (element ReturnValue, ok bool, err error)
 		}
 
 		actions = append(actions, leftEnd.updateSideAction(Left, rightEnd.address, c.table))
-		actions = append(actions, rightEnd.updateBothSidesAction(null, leftEnd.address, c.table))
-		actions = append(actions, penultimateRight.updateSideAction(Right, null, c.table))
+		actions = append(actions, rightEnd.updateBothSidesAction(listNull, leftEnd.address, c.table))
+		actions = append(actions, penultimateRight.updateSideAction(Right, listNull, c.table))
 		element = rightEnd.value
 	}
 
@@ -720,8 +778,9 @@ func (c Client) RPUSH(key string, elements ...Value) (newLength int64, err error
 		if err != nil {
 			return newLength, err
 		}
-		newLength++
 	}
+
+	newLength, err = c.LLEN(key)
 
 	return
 }
@@ -732,8 +791,9 @@ func (c Client) RPUSHX(key string, elements ...Value) (newLength int64, err erro
 		if err != nil {
 			return newLength, err
 		}
-		newLength++
 	}
+
+	newLength, err = c.LLEN(key)
 
 	return
 }
