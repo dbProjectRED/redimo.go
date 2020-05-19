@@ -19,7 +19,7 @@ const (
 	ZAggregationMax ZAggregation = "MAX"
 )
 
-const skScore = skN1
+const skScore = skN
 
 var accumulators = map[ZAggregation]func(float64, float64) float64{
 	ZAggregationSum: func(a float64, b float64) float64 {

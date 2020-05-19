@@ -19,58 +19,22 @@ func newClient(t *testing.T) Client {
 	dynamoService := dynamodb.New(newConfig(t))
 	_, err := dynamoService.CreateTableRequest(&dynamodb.CreateTableInput{
 		AttributeDefinitions: []dynamodb.AttributeDefinition{
-			{AttributeName: aws.String("pk"), AttributeType: "S"},
-			{AttributeName: aws.String("sk"), AttributeType: "S"},
-			{AttributeName: aws.String("sk2"), AttributeType: "S"},
-			{AttributeName: aws.String("sk3"), AttributeType: "S"},
-			{AttributeName: aws.String("sk4"), AttributeType: "S"},
-			{AttributeName: aws.String("skN1"), AttributeType: "N"},
+			{AttributeName: aws.String(pk), AttributeType: "S"},
+			{AttributeName: aws.String(sk), AttributeType: "S"},
+			{AttributeName: aws.String(skN), AttributeType: "N"},
 		},
 		BillingMode:            "",
 		GlobalSecondaryIndexes: nil,
 		KeySchema: []dynamodb.KeySchemaElement{
-			{AttributeName: aws.String("pk"), KeyType: dynamodb.KeyTypeHash},
-			{AttributeName: aws.String("sk"), KeyType: dynamodb.KeyTypeRange},
+			{AttributeName: aws.String(pk), KeyType: dynamodb.KeyTypeHash},
+			{AttributeName: aws.String(sk), KeyType: dynamodb.KeyTypeRange},
 		},
 		LocalSecondaryIndexes: []dynamodb.LocalSecondaryIndex{
 			{
-				IndexName: aws.String("lsi_sk2"),
+				IndexName: aws.String("lsi_skN"),
 				KeySchema: []dynamodb.KeySchemaElement{
-					{AttributeName: aws.String("pk"), KeyType: dynamodb.KeyTypeHash},
-					{AttributeName: aws.String("sk2"), KeyType: dynamodb.KeyTypeRange},
-				},
-				Projection: &dynamodb.Projection{
-					NonKeyAttributes: nil,
-					ProjectionType:   dynamodb.ProjectionTypeKeysOnly,
-				},
-			},
-			{
-				IndexName: aws.String("lsi_sk3"),
-				KeySchema: []dynamodb.KeySchemaElement{
-					{AttributeName: aws.String("pk"), KeyType: dynamodb.KeyTypeHash},
-					{AttributeName: aws.String("sk3"), KeyType: dynamodb.KeyTypeRange},
-				},
-				Projection: &dynamodb.Projection{
-					NonKeyAttributes: nil,
-					ProjectionType:   dynamodb.ProjectionTypeKeysOnly,
-				},
-			},
-			{
-				IndexName: aws.String("lsi_sk4"),
-				KeySchema: []dynamodb.KeySchemaElement{
-					{AttributeName: aws.String("pk"), KeyType: dynamodb.KeyTypeHash},
-					{AttributeName: aws.String("sk4"), KeyType: dynamodb.KeyTypeRange},
-				},
-				Projection: &dynamodb.Projection{
-					NonKeyAttributes: nil,
-					ProjectionType:   dynamodb.ProjectionTypeKeysOnly,
-				},
-			},
-			{
-				IndexName: aws.String("lsi_skN1"),
-				KeySchema: []dynamodb.KeySchemaElement{
-					{AttributeName: aws.String("pk"), KeyType: dynamodb.KeyTypeHash},
-					{AttributeName: aws.String("skN1"), KeyType: dynamodb.KeyTypeRange},
+					{AttributeName: aws.String(pk), KeyType: dynamodb.KeyTypeHash},
+					{AttributeName: aws.String(skN), KeyType: dynamodb.KeyTypeRange},
 				},
 				Projection: &dynamodb.Projection{
 					NonKeyAttributes: nil,
@@ -94,10 +58,7 @@ func newClient(t *testing.T) Client {
 		consistentReads: true,
 		table:           name,
 		indexes: map[string]string{
-			sk2:  "lsi_sk2",
-			sk3:  "lsi_sk3",
-			sk4:  "lsi_sk4",
-			skN1: "lsi_skN1",
+			skN: "lsi_skN",
 		},
 	}
 }

@@ -31,13 +31,10 @@ func (c Client) getIndex(attribute string) *string {
 }
 
 const (
-	pk   = "pk"
-	sk   = "sk"
-	sk2  = "sk2"
-	sk3  = "sk3"
-	sk4  = "sk4"
-	vk   = "val"
-	skN1 = "skN1"
+	pk  = "pk"
+	sk  = "sk"
+	vk  = "val"
+	skN = "skN"
 )
 
 type expressionBuilder struct {
@@ -154,12 +151,8 @@ func newExpresionBuilder() expressionBuilder {
 }
 
 type keyDef struct {
-	pk   string
-	sk   string
-	sk2  string
-	sk3  string
-	sk4  string
-	skN1 string
+	pk string
+	sk string
 }
 
 func (k keyDef) toAV() map[string]dynamodb.AttributeValue {
@@ -170,29 +163,6 @@ func (k keyDef) toAV() map[string]dynamodb.AttributeValue {
 		sk: {
 			S: aws.String(k.sk),
 		},
-	}
-	if k.sk2 != "" {
-		m[sk2] = dynamodb.AttributeValue{
-			S: aws.String(k.sk2),
-		}
-	}
-
-	if k.sk3 != "" {
-		m[sk3] = dynamodb.AttributeValue{
-			S: aws.String(k.sk3),
-		}
-	}
-
-	if k.sk4 != "" {
-		m[sk4] = dynamodb.AttributeValue{
-			S: aws.String(k.sk4),
-		}
-	}
-
-	if k.skN1 != "" {
-		m[skN1] = dynamodb.AttributeValue{
-			N: aws.String(k.skN1),
-		}
 	}
 
 	return m
@@ -212,11 +182,8 @@ func (i itemDef) eav() map[string]dynamodb.AttributeValue {
 
 func parseKey(avm map[string]dynamodb.AttributeValue) keyDef {
 	return keyDef{
-		pk:  aws.StringValue(avm[pk].S),
-		sk:  aws.StringValue(avm[sk].S),
-		sk2: aws.StringValue(avm[sk2].S),
-		sk3: aws.StringValue(avm[sk3].S),
-		sk4: aws.StringValue(avm[sk4].S),
+		pk: aws.StringValue(avm[pk].S),
+		sk: aws.StringValue(avm[sk].S),
 	}
 }
 
