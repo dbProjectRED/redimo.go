@@ -9,9 +9,15 @@ import (
 func TestBasicSets(t *testing.T) {
 	c := newClient(t)
 
-	addedCount, err := c.SADD("s1", "m1", "m2", "m3")
+	addedMembers, err := c.SADD("s1", "m1", "m2")
 	assert.NoError(t, err)
-	assert.Equal(t, int64(3), addedCount)
+	assert.Equal(t, 2, len(addedMembers))
+	assert.ElementsMatch(t, []string{"m1", "m2"}, addedMembers)
+
+	addedMembers, err = c.SADD("s1", "m1", "m2", "m3")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(addedMembers))
+	assert.ElementsMatch(t, []string{"m3"}, addedMembers)
 
 	ok, err := c.SISMEMBER("s1", "m1")
 	assert.NoError(t, err)
@@ -33,8 +39,13 @@ func TestBasicSets(t *testing.T) {
 	assert.NoError(t, err)
 	assert.ElementsMatch(t, []string{}, members)
 
-	err = c.SREM("s1", "m1", "m2")
+	removedMembers, err := c.SREM("s1", "m1", "m2")
 	assert.NoError(t, err)
+	assert.ElementsMatch(t, []string{"m1", "m2"}, removedMembers)
+
+	removedMembers, err = c.SREM("s1", "m1", "m2")
+	assert.NoError(t, err)
+	assert.ElementsMatch(t, []string{}, removedMembers)
 
 	members, err = c.SMEMBERS("s1")
 	assert.NoError(t, err)

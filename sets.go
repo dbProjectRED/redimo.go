@@ -2,24 +2,47 @@ package redimo
 
 import (
 	"context"
+	"math/rand"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
-func (c Client) SADD(key string, members ...string) (addedCount int64, err error) {
+type setMember struct {
+	pk string
+	sk string
+}
+
+const skRandomN = skN
+
+func (sm setMember) toAV() map[string]dynamodb.AttributeValue {
+	av := sm.keyAV()
+	av[skRandomN] = IntValue{rand.Int63()}.ToAV()
+
+	return av
+}
+
+func (sm setMember) keyAV() map[string]dynamodb.AttributeValue {
+	av := make(map[string]dynamodb.AttributeValue)
+	av[pk] = StringValue{sm.pk}.ToAV()
+	av[sk] = StringValue{sm.sk}.ToAV()
+
+	return av
+}
+
+func (c Client) SADD(key string, members ...string) (addedMembers []string, err error) {
 	for _, member := range members {
 		resp, err := c.ddbClient.PutItemRequest(&dynamodb.PutItemInput{
-			Item:         keyDef{pk: key, sk: member}.toAV(),
+			Item:         setMember{pk: key, sk: member}.toAV(),
 			ReturnValues: dynamodb.ReturnValueAllOld,
 			TableName:    aws.String(c.table),
 		}).Send(context.TODO())
 		if err != nil {
-			return addedCount, err
+			return addedMembers, err
 		}
 
 		if len(resp.Attributes) == 0 {
-			addedCount++
+			addedMembers = append(addedMembers, member)
 		}
 	}
 
@@ -119,7 +142,7 @@ func (c Client) SINTERSTORE(destinationKey string, sourceKey string, otherKeys .
 func (c Client) SISMEMBER(key string, member string) (ok bool, err error) {
 	resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
 		ConsistentRead: aws.Bool(c.consistentReads),
-		Key:            keyDef{pk: key, sk: member}.toAV(),
+		Key:            setMember{pk: key, sk: member}.keyAV(),
 		TableName:      aws.String(c.table),
 	}).Send(context.TODO())
 	if err != nil || len(resp.Item) == 0 {
@@ -177,13 +200,13 @@ func (c Client) SMOVE(sourceKey string, destinationKey string, member string) (o
 					ConditionExpression:       builder.conditionExpression(),
 					ExpressionAttributeNames:  builder.expressionAttributeNames(),
 					ExpressionAttributeValues: builder.expressionAttributeValues(),
-					Key:                       keyDef{pk: sourceKey, sk: member}.toAV(),
+					Key:                       setMember{pk: sourceKey, sk: member}.keyAV(),
 					TableName:                 aws.String(c.table),
 				},
 			},
 			{
 				Put: &dynamodb.Put{
-					Item:      keyDef{pk: destinationKey, sk: member}.toAV(),
+					Item:      setMember{pk: destinationKey, sk: member}.toAV(),
 					TableName: aws.String(c.table),
 				},
 			},
@@ -204,7 +227,7 @@ func (c Client) SMOVE(sourceKey string, destinationKey string, member string) (o
 func (c Client) SPOP(key string, count int64) (members []string, err error) {
 	members, err = c.SRANDMEMBER(key, count)
 	if err == nil {
-		err = c.SREM(key, members...)
+		_, err = c.SREM(key, members...)
 	}
 
 	return
@@ -239,31 +262,23 @@ func (c Client) SRANDMEMBER(key string, count int64) (members []string, err erro
 	return
 }
 
-func (c Client) SREM(key string, members ...string) (err error) {
-	writeItems := make([]dynamodb.WriteRequest, len(members))
-	for i, member := range members {
-		writeItems[i] = dynamodb.WriteRequest{
-			DeleteRequest: &dynamodb.DeleteRequest{
-				Key: keyDef{
-					pk: key,
-					sk: member,
-				}.toAV(),
-			},
-		}
-	}
-
-	requestMap := map[string][]dynamodb.WriteRequest{}
-	requestMap[c.table] = writeItems
-
-	for len(requestMap) > 0 {
-		resp, err := c.ddbClient.BatchWriteItemRequest(&dynamodb.BatchWriteItemInput{
-			RequestItems: requestMap,
+func (c Client) SREM(key string, members ...string) (removedMembers []string, err error) {
+	for _, member := range members {
+		resp, err := c.ddbClient.DeleteItemRequest(&dynamodb.DeleteItemInput{
+			Key: setMember{
+				pk: key,
+				sk: member,
+			}.keyAV(),
+			ReturnValues: dynamodb.ReturnValueAllOld,
+			TableName:    aws.String(c.table),
 		}).Send(context.TODO())
 		if err != nil {
-			return err
+			return removedMembers, err
 		}
 
-		requestMap = resp.UnprocessedItems
+		if len(resp.Attributes) > 0 {
+			removedMembers = append(removedMembers, member)
+		}
 	}
 
 	return
