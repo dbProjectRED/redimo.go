@@ -73,9 +73,13 @@ func (xid XID) Seq() uint64 {
 	return seq
 }
 
+func (xid XID) av() dynamodb.AttributeValue {
+	return dynamodb.AttributeValue{S: aws.String(xid.String())}
+}
+
 type StreamItem struct {
 	ID     XID
-	Fields map[string]string
+	Fields map[string]ReturnValue
 }
 
 type PendingItem struct {
@@ -149,13 +153,13 @@ func (i StreamItem) toAV(key string) map[string]dynamodb.AttributeValue {
 	avm[sk] = StringValue{i.ID.String()}.ToAV()
 
 	for k, v := range i.Fields {
-		avm["_"+k] = StringValue{v}.ToAV()
+		avm["_"+k] = v.ToAV()
 	}
 
 	return avm
 }
 
-func (c Client) XACK(key string, group string, ids ...XID) (ackCount int64, err error) {
+func (c Client) XACK(key string, group string, ids ...XID) (acknowledgedIds []XID, err error) {
 	for _, id := range ids {
 		resp, err := c.ddbClient.DeleteItemRequest(&dynamodb.DeleteItemInput{
 			Key:          keyDef{pk: c.xGroupKey(key, group), sk: id.String()}.toAV(),
@@ -163,18 +167,18 @@ func (c Client) XACK(key string, group string, ids ...XID) (ackCount int64, err 
 			TableName:    aws.String(c.table),
 		}).Send(context.TODO())
 		if err != nil {
-			return ackCount, err
+			return acknowledgedIds, err
 		}
 
 		if len(resp.Attributes) > 0 {
-			ackCount++
+			acknowledgedIds = append(acknowledgedIds, id)
 		}
 	}
 
 	return
 }
 
-func (c Client) XADD(key string, id XID, fields map[string]string) (returnedID XID, err error) {
+func (c Client) XADD(key string, id XID, fields map[string]Value) (returnedID XID, err error) {
 	retry := true
 	retryCount := 0
 
@@ -191,8 +195,12 @@ func (c Client) XADD(key string, id XID, fields map[string]string) (returnedID X
 
 			id = NewXID(now, uint64(newSequence))
 		}
+		wrappedFields := make(map[string]ReturnValue)
+		for k, v := range fields {
+			wrappedFields[k] = ReturnValue{v.ToAV()}
+		}
 
-		actions = append(actions, StreamItem{ID: id, Fields: fields}.putAction(key, c.table))
+		actions = append(actions, StreamItem{ID: id, Fields: wrappedFields}.putAction(key, c.table))
 		actions = append(actions, id.sequenceUpdateAction(key, c.table))
 
 		_, err := c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
@@ -280,7 +288,7 @@ func (c Client) XCLAIM(key string, group string, consumer string, lastDeliveredB
 	return items, nil
 }
 
-func (c Client) XDEL(key string, ids ...XID) (deletedCount int64, err error) {
+func (c Client) XDEL(key string, ids ...XID) (deletedItems []XID, err error) {
 	for _, id := range ids {
 		resp, err := c.ddbClient.DeleteItemRequest(&dynamodb.DeleteItemInput{
 			Key:          keyDef{pk: key, sk: id.String()}.toAV(),
@@ -288,11 +296,11 @@ func (c Client) XDEL(key string, ids ...XID) (deletedCount int64, err error) {
 			TableName:    aws.String(c.table),
 		}).Send(context.TODO())
 		if err != nil {
-			return deletedCount, err
+			return deletedItems, err
 		}
 
 		if len(resp.Attributes) > 0 {
-			deletedCount++
+			deletedItems = append(deletedItems, id)
 		}
 	}
 
@@ -346,8 +354,8 @@ func (c Client) XLEN(key string, start, stop XID) (count int64, err error) {
 		builder := newExpresionBuilder()
 		builder.addConditionEquality(pk, StringValue{key})
 		builder.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", sk), sk)
-		builder.values["start"] = dynamodb.AttributeValue{S: aws.String(start.String())}
-		builder.values["stop"] = dynamodb.AttributeValue{S: aws.String(stop.String())}
+		builder.values["start"] = start.av()
+		builder.values["stop"] = stop.av()
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 			ConsistentRead:            aws.Bool(c.consistentReads),
 			ExclusiveStartKey:         cursor,
@@ -384,8 +392,8 @@ func (c Client) XPENDING(key string, group string, count int64) (pendingItems []
 		builder := newExpresionBuilder()
 		builder.addConditionEquality(pk, StringValue{c.xGroupKey(key, group)})
 		builder.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", sk), sk)
-		builder.values["start"] = StringValue{XStart.String()}.ToAV()
-		builder.values["stop"] = StringValue{XEnd.String()}.ToAV()
+		builder.values["start"] = XStart.av()
+		builder.values["stop"] = XEnd.av()
 
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 			ConsistentRead:            aws.Bool(c.consistentReads),
@@ -430,8 +438,8 @@ func (c Client) xRange(key string, start, stop XID, count int64, forward bool) (
 		builder := newExpresionBuilder()
 		builder.addConditionEquality(pk, StringValue{key})
 		builder.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", sk), sk)
-		builder.values["start"] = dynamodb.AttributeValue{S: aws.String(start.String())}
-		builder.values["stop"] = dynamodb.AttributeValue{S: aws.String(stop.String())}
+		builder.values["start"] = start.av()
+		builder.values["stop"] = stop.av()
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 			ConsistentRead:            aws.Bool(c.consistentReads),
 			ExclusiveStartKey:         cursor,
@@ -463,11 +471,11 @@ func (c Client) xRange(key string, start, stop XID, count int64, forward bool) (
 }
 
 func parseStreamItem(item map[string]dynamodb.AttributeValue) (si StreamItem) {
-	si.Fields = make(map[string]string)
+	si.Fields = make(map[string]ReturnValue)
 
 	for k, v := range item {
 		if strings.HasPrefix(k, "_") {
-			si.Fields[k[1:]] = aws.StringValue(v.S)
+			si.Fields[k[1:]] = ReturnValue{v}
 		}
 	}
 
@@ -622,8 +630,8 @@ func (c Client) XTRIM(key string, newCount int64) (deletedCount int64, err error
 		builder := newExpresionBuilder()
 		builder.addConditionEquality(pk, StringValue{key})
 		builder.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", sk), sk)
-		builder.values["start"] = dynamodb.AttributeValue{S: aws.String(XStart.String())}
-		builder.values["stop"] = dynamodb.AttributeValue{S: aws.String(XEnd.String())}
+		builder.values["start"] = XStart.av()
+		builder.values["stop"] = XEnd.av()
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 			ConsistentRead:            aws.Bool(c.consistentReads),
 			ExclusiveStartKey:         cursor,
@@ -645,20 +653,20 @@ func (c Client) XTRIM(key string, newCount int64) (deletedCount int64, err error
 			hasMoreResults = false
 		}
 
-		var sortKeys []string
+		var idsToDelete []XID
 
 		for _, item := range resp.Items {
 			if newCount == 0 {
 				parsedItem := parseKey(item)
-				sortKeys = append(sortKeys, parsedItem.sk)
+				idsToDelete = append(idsToDelete, XID(parsedItem.sk))
 			} else {
 				newCount--
 			}
 		}
 
-		if len(sortKeys) > 0 {
-			deletedCount += int64(len(sortKeys))
-			_, err = c.HDEL(key, sortKeys...)
+		if len(idsToDelete) > 0 {
+			deletedCount += int64(len(idsToDelete))
+			_, err = c.XDEL(key, idsToDelete...)
 
 			if err != nil {
 				return deletedCount, err
