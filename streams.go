@@ -195,7 +195,9 @@ func (c Client) XADD(key string, id XID, fields map[string]Value) (returnedID XI
 
 			id = NewXID(now, uint64(newSequence))
 		}
+
 		wrappedFields := make(map[string]ReturnValue)
+
 		for k, v := range fields {
 			wrappedFields[k] = ReturnValue{v.ToAV()}
 		}
