@@ -12,7 +12,7 @@ func TestBasic(t *testing.T) {
 	assert.NoError(t, err)
 	assert.False(t, val.Present())
 
-	ok, err := c.SET("hello", StringValue{"world"}, Flags{})
+	ok, err := c.SET("hello", StringValue{"world"}, Unconditionally)
 	assert.NoError(t, err)
 	assert.True(t, ok)
 
@@ -33,11 +33,11 @@ func TestBasic(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(42), val.Int())
 
-	ok, err = c.SET("howdy", StringValue{"partner"}, Flags{IfAlreadyExists})
+	ok, err = c.SET("howdy", StringValue{"partner"}, IfAlreadyExists)
 	assert.NoError(t, err)
 	assert.False(t, ok)
 
-	ok, err = c.SET("hola", StringValue{"mundo"}, Flags{IfAlreadyExists})
+	ok, err = c.SET("hola", StringValue{"mundo"}, IfAlreadyExists)
 	assert.NoError(t, err)
 	assert.True(t, ok)
 

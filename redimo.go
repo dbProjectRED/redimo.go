@@ -190,6 +190,8 @@ func parseItem(avm map[string]dynamodb.AttributeValue) (item itemDef) {
 type Flag string
 
 const (
+	None            Flag = "-"
+	Unconditionally      = None
 	IfAlreadyExists Flag = "XX"
 	IfNotExists     Flag = "NX"
 )

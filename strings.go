@@ -28,23 +28,23 @@ func (c Client) GET(key string) (val ReturnValue, err error) {
 	return
 }
 
-// SET stores the given Value at the given key. If called with no flags, like SET("key", "value", Flags{}), SET is
+// SET stores the given Value at the given key. If called as SET("key", "value", None), SET is
 // unconditional and is not expected to fail.
 //
 // The condition flags IfNotExists and IfAlreadyExists can be specified, and if they are
 // the SET becomes conditional and will return false if the condition fails.
 //
 // Works similar to https://redis.io/commands/set
-func (c Client) SET(key string, value Value, flags Flags) (ok bool, err error) {
+func (c Client) SET(key string, value Value, flag Flag) (ok bool, err error) {
 	builder := newExpresionBuilder()
 
 	builder.updateSET(vk, value)
 
-	if flags.has(IfNotExists) {
+	if flag == IfNotExists {
 		builder.addConditionNotExists(pk)
 	}
 
-	if flags.has(IfAlreadyExists) {
+	if flag == IfAlreadyExists {
 		builder.addConditionExists(pk)
 	}
 
@@ -74,7 +74,7 @@ func (c Client) SET(key string, value Value, flags Flags) (ok bool, err error) {
 //
 // Works similar to https://redis.io/commands/setnx
 func (c Client) SETNX(key string, value Value) (ok bool, err error) {
-	return c.SET(key, value, Flags{IfNotExists})
+	return c.SET(key, value, IfNotExists)
 }
 
 // GETSET gets the value at the key and atomically sets it to a new value.
