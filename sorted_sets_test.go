@@ -10,16 +10,22 @@ import (
 func TestZBasic(t *testing.T) {
 	c := newClient(t)
 
-	count, err := c.ZADD("z1", map[string]float64{"m1": 1, "m2": 2, "m3": 3, "m4": 4}, Flags{})
+	addedMembers, err := c.ZADD("z1", map[string]float64{"m1": 1, "m4": 4}, Flags{})
 	assert.NoError(t, err)
-	assert.Equal(t, int64(4), count)
+	assert.Equal(t, 2, len(addedMembers))
+	assert.ElementsMatch(t, []string{"m1", "m4"}, addedMembers)
+
+	addedMembers, err = c.ZADD("z1", map[string]float64{"m1": 1, "m2": 2, "m3": 3, "m4": 4}, Flags{})
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(addedMembers))
+	assert.ElementsMatch(t, []string{"m2", "m3"}, addedMembers)
 
 	score, ok, err := c.ZSCORE("z1", "m2")
 	assert.NoError(t, err)
 	assert.True(t, ok)
 	assert.Equal(t, float64(2), score)
 
-	count, err = c.ZCARD("z1")
+	count, err := c.ZCARD("z1")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(4), count)
 
@@ -36,9 +42,10 @@ func TestZBasic(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, 2.5, score)
 
-	count, err = c.ZREM("z1", "m2", "m3", "nosuchmember")
+	removedMembers, err := c.ZREM("z1", "m2", "m3", "nosuchmember")
 	assert.NoError(t, err)
-	assert.Equal(t, int64(2), count)
+	assert.Equal(t, 2, len(removedMembers))
+	assert.ElementsMatch(t, []string{"m2", "m3"}, removedMembers)
 
 	count, err = c.ZCARD("z1")
 	assert.NoError(t, err)
@@ -69,7 +76,7 @@ func TestZBasic(t *testing.T) {
 func TestZPops(t *testing.T) {
 	c := newClient(t)
 
-	count, err := c.ZADD("z1", map[string]float64{
+	addedMembers, err := c.ZADD("z1", map[string]float64{
 		"m1": 1,
 		"m2": 2,
 		"m3": 3,
@@ -81,9 +88,9 @@ func TestZPops(t *testing.T) {
 		"m9": 9,
 	}, Flags{})
 	assert.NoError(t, err)
-	assert.Equal(t, int64(9), count)
+	assert.Equal(t, 9, len(addedMembers))
 
-	count, err = c.ZCARD("z1")
+	count, err := c.ZCARD("z1")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(9), count)
 
@@ -142,9 +149,9 @@ func TestZRanges(t *testing.T) {
 		"m8": 8,
 		"m9": 9,
 	}
-	count, err := c.ZADD("z1", fullSet, Flags{})
+	addedMembers, err := c.ZADD("z1", fullSet, Flags{})
 	assert.NoError(t, err)
-	assert.Equal(t, int64(9), count)
+	assert.Equal(t, 9, len(addedMembers))
 
 	set, err := c.ZRANGE("z1", 0, 3)
 	assert.NoError(t, err)
@@ -214,25 +221,24 @@ func TestZRanges(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, map[string]float64{"m2": 2}, set)
 
-	count, err = c.ZREMRANGEBYLEX("z1", "m1", "m3")
+	removedMembers, err := c.ZREMRANGEBYLEX("z1", "m1", "m3")
 	assert.NoError(t, err)
-	assert.Equal(t, int64(3), count)
+	assert.ElementsMatch(t, []string{"m1", "m2", "m3"}, removedMembers)
 
-	// remove m1, m2, m3
 	set, err = c.ZRANGEBYLEX("z1", "m1", "m3", 0, 0)
 	assert.NoError(t, err)
 	assert.Empty(t, set)
 
-	count, err = c.ZCARD("z1")
+	count, err := c.ZCARD("z1")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(6), count)
 
 	assertAbsence(t, c, "m1", "m2", "m3")
 
-	// remove m4, m5, m6
-	count, err = c.ZREMRANGEBYRANK("z1", 0, 2)
+	removedMembers, err = c.ZREMRANGEBYRANK("z1", 0, 2)
 	assert.NoError(t, err)
-	assert.Equal(t, int64(3), count)
+	assert.Equal(t, 3, len(removedMembers))
+	assert.ElementsMatch(t, []string{"m4", "m5", "m6"}, removedMembers)
 
 	assertAbsence(t, c, "m4", "m5", "m6")
 
@@ -240,10 +246,9 @@ func TestZRanges(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(3), count)
 
-	// remove m7, m8, m9
-	count, err = c.ZREMRANGEBYSCORE("z1", 7, 9)
+	removedMembers, err = c.ZREMRANGEBYSCORE("z1", 7, 9)
 	assert.NoError(t, err)
-	assert.Equal(t, int64(3), count)
+	assert.ElementsMatch(t, []string{"m7", "m8", "m9"}, removedMembers)
 
 	assertAbsence(t, c, "m7", "m8", "m9")
 
@@ -263,16 +268,16 @@ func assertAbsence(t *testing.T, c Client, members ...string) {
 func TestZCounts(t *testing.T) {
 	c := newClient(t)
 
-	count, err := c.ZADD("z1", map[string]float64{
+	addedMembers, err := c.ZADD("z1", map[string]float64{
 		"m1": 1,
 		"m2": 2,
 		"m3": 3,
 		"m4": 4,
 	}, Flags{})
 	assert.NoError(t, err)
-	assert.Equal(t, int64(4), count)
+	assert.Equal(t, 4, len(addedMembers))
 
-	count, err = c.ZCOUNT("z1", 2, 3)
+	count, err := c.ZCOUNT("z1", 2, 3)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(2), count)
 
@@ -345,9 +350,9 @@ func TestZAggregations(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, map[string]float64{"m1": 1, "m2": 2, "m3": 7, "m4": 8, "m5": 10, "m6": 6, "m7": 7}, set)
 
-	count, err := c.ZUNIONSTORE("union1", []string{"z1", "z2", "z3"}, ZAggregationMax, map[string]float64{"z2": 2})
+	set, err = c.ZUNIONSTORE("union1", []string{"z1", "z2", "z3"}, ZAggregationMax, map[string]float64{"z2": 2})
 	assert.NoError(t, err)
-	assert.Equal(t, int64(7), count)
+	assert.Equal(t, 7, len(set))
 
 	set, err = c.ZRANGEBYSCORE("union1", math.Inf(-1), math.Inf(+1), 0, 0)
 	assert.NoError(t, err)
@@ -373,9 +378,9 @@ func TestZAggregations(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, map[string]float64{"m3": 7}, set)
 
-	count, err = c.ZINTERSTORE("inter1", []string{"z1", "z2"}, ZAggregationMax, map[string]float64{"z2": 2})
+	set, err = c.ZINTERSTORE("inter1", []string{"z1", "z2"}, ZAggregationMax, map[string]float64{"z2": 2})
 	assert.NoError(t, err)
-	assert.Equal(t, int64(1), count)
+	assert.Equal(t, 1, len(set))
 
 	set, err = c.ZRANGEBYSCORE("inter1", math.Inf(-1), math.Inf(+1), 0, 0)
 	assert.NoError(t, err)

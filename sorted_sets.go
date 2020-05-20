@@ -39,7 +39,7 @@ var accumulators = map[ZAggregation]func(float64, float64) float64{
 	},
 }
 
-type optionalValue interface {
+type rangeCap interface {
 	Value
 	present() bool
 }
@@ -80,7 +80,7 @@ func zScoreFromAV(av dynamodb.AttributeValue) float64 {
 	return f
 }
 
-func (c Client) ZADD(key string, membersWithScores map[string]float64, flags Flags) (addedCount int64, err error) {
+func (c Client) ZADD(key string, membersWithScores map[string]float64, flags Flags) (addedMembers []string, err error) {
 	for member, score := range membersWithScores {
 		builder := newExpresionBuilder()
 		builder.updateSetAV(skScore, zScore{score}.ToAV())
@@ -107,11 +107,11 @@ func (c Client) ZADD(key string, membersWithScores map[string]float64, flags Fla
 		}
 
 		if err != nil {
-			return addedCount, err
+			return addedMembers, err
 		}
 
 		if len(resp.Attributes) == 0 {
-			addedCount++
+			addedMembers = append(addedMembers, member)
 		}
 	}
 
@@ -126,7 +126,7 @@ func (c Client) ZCOUNT(key string, minScore, maxScore float64) (count int64, err
 	return c.zGeneralCount(key, zScore{minScore}, zScore{maxScore}, skScore)
 }
 
-func (c Client) zGeneralCount(key string, min optionalValue, max optionalValue, attribute string) (count int64, err error) {
+func (c Client) zGeneralCount(key string, min rangeCap, max rangeCap, attribute string) (count int64, err error) {
 	builder := newExpresionBuilder()
 	builder.addConditionEquality(pk, StringValue{key})
 
@@ -210,13 +210,13 @@ func (c Client) ZINCRBY(key string, member string, delta float64) (newScore floa
 	return
 }
 
-func (c Client) ZINTERSTORE(destinationKey string, sourceKeys []string, aggregation ZAggregation, weights map[string]float64) (count int64, err error) {
+func (c Client) ZINTERSTORE(destinationKey string, sourceKeys []string, aggregation ZAggregation, weights map[string]float64) (membersWithScores map[string]float64, err error) {
 	set, err := c.ZINTER(sourceKeys, aggregation, weights)
 	if err == nil {
-		count, err = c.ZADD(destinationKey, set, Flags{})
+		_, err = c.ZADD(destinationKey, set, Flags{})
 	}
 
-	return
+	return set, err
 }
 
 func (c Client) ZLEXCOUNT(key string, min string, max string) (count int64, err error) {
@@ -240,19 +240,20 @@ func (c Client) zPop(key string, count int64, forward bool) (membersWithScores m
 		return
 	}
 
-	members := make([]string, 0, len(membersWithScores))
+	poppedMembers := make(map[string]float64)
 
-	for member := range membersWithScores {
-		members = append(members, member)
+	for member, score := range membersWithScores {
+		popped, err := c.ZREM(key, member)
+		if err != nil {
+			return poppedMembers, err
+		}
+
+		if len(popped) > 0 {
+			poppedMembers[member] = score
+		}
 	}
 
-	_, err = c.ZREM(key, members...)
-
-	if err != nil {
-		return
-	}
-
-	return
+	return poppedMembers, err
 }
 
 func (c Client) ZRANGE(key string, start, stop int64) (membersWithScores map[string]float64, err error) {
@@ -293,7 +294,7 @@ func (c Client) ZRANGEBYSCORE(key string, min, max float64, offset, count int64)
 }
 
 func (c Client) zGeneralRange(key string,
-	start optionalValue, stop optionalValue,
+	start rangeCap, stop rangeCap,
 	offset int64, count int64,
 	forward bool, attribute string) (membersWithScores map[string]float64, err error) {
 	membersWithScores = make(map[string]float64)
@@ -363,7 +364,7 @@ func (c Client) zGeneralRange(key string,
 	return membersWithScores, nil
 }
 
-func (c Client) ZRANK(key string, member string) (rank int64, ok bool, err error) {
+func (c Client) ZRANK(key string, member string) (rank int64, found bool, err error) {
 	return c.zRank(key, member, true)
 }
 
@@ -388,36 +389,30 @@ func (c Client) zRank(key string, member string, forward bool) (rank int64, ok b
 	return
 }
 
-func (c Client) ZREM(key string, members ...string) (removedCount int64, err error) {
+func (c Client) ZREM(key string, members ...string) (removedMembers []string, err error) {
 	for _, member := range members {
-		builder := newExpresionBuilder()
-		builder.addConditionExists(pk)
-
-		_, err := c.ddbClient.DeleteItemRequest(&dynamodb.DeleteItemInput{
-			ConditionExpression:       builder.conditionExpression(),
-			ExpressionAttributeNames:  builder.expressionAttributeNames(),
-			ExpressionAttributeValues: builder.expressionAttributeValues(),
-			Key:                       keyDef{pk: key, sk: member}.toAV(),
-			TableName:                 aws.String(c.table),
+		resp, err := c.ddbClient.DeleteItemRequest(&dynamodb.DeleteItemInput{
+			Key:          keyDef{pk: key, sk: member}.toAV(),
+			ReturnValues: dynamodb.ReturnValueAllOld,
+			TableName:    aws.String(c.table),
 		}).Send(context.TODO())
-		if conditionFailureError(err) {
-			continue
-		}
 
 		if err != nil {
-			return removedCount, err
+			return removedMembers, err
 		}
 
-		removedCount++
+		if len(resp.Attributes) > 0 {
+			removedMembers = append(removedMembers, member)
+		}
 	}
 
-	return removedCount, nil
+	return
 }
 
-func (c Client) ZREMRANGEBYLEX(key string, min, max string) (removedCount int64, err error) {
+func (c Client) ZREMRANGEBYLEX(key string, min, max string) (removedMembers []string, err error) {
 	membersWithScores, err := c.ZRANGEBYLEX(key, min, max, 0, 0)
 	if err == nil {
-		removedCount, err = c.ZREM(key, zReadKeys(membersWithScores)...)
+		removedMembers, err = c.ZREM(key, zReadKeys(membersWithScores)...)
 	}
 
 	return
@@ -432,19 +427,19 @@ func zReadKeys(membersWithScores map[string]float64) []string {
 	return members
 }
 
-func (c Client) ZREMRANGEBYRANK(key string, start, stop int64) (removedCount int64, err error) {
+func (c Client) ZREMRANGEBYRANK(key string, start, stop int64) (removedMembers []string, err error) {
 	membersWithScores, err := c.ZRANGE(key, start, stop)
 	if err == nil {
-		removedCount, err = c.ZREM(key, zReadKeys(membersWithScores)...)
+		removedMembers, err = c.ZREM(key, zReadKeys(membersWithScores)...)
 	}
 
 	return
 }
 
-func (c Client) ZREMRANGEBYSCORE(key string, min, max float64) (removedCount int64, err error) {
+func (c Client) ZREMRANGEBYSCORE(key string, min, max float64) (removedMembers []string, err error) {
 	membersWithScores, err := c.ZRANGEBYSCORE(key, min, max, 0, 0)
 	if err == nil {
-		removedCount, err = c.ZREM(key, zReadKeys(membersWithScores)...)
+		removedMembers, err = c.ZREM(key, zReadKeys(membersWithScores)...)
 	}
 
 	return
@@ -462,11 +457,11 @@ func (c Client) ZREVRANGEBYSCORE(key string, max, min float64, offset, count int
 	return c.zGeneralRange(key, zScore{min}, zScore{max}, offset, count, false, skScore)
 }
 
-func (c Client) ZREVRANK(key string, member string) (rank int64, ok bool, err error) {
+func (c Client) ZREVRANK(key string, member string) (rank int64, found bool, err error) {
 	return c.zRank(key, member, false)
 }
 
-func (c Client) ZSCORE(key string, member string) (score float64, ok bool, err error) {
+func (c Client) ZSCORE(key string, member string) (score float64, found bool, err error) {
 	resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
 		ConsistentRead: aws.Bool(c.consistentReads),
 		Key: keyDef{
@@ -477,20 +472,20 @@ func (c Client) ZSCORE(key string, member string) (score float64, ok bool, err e
 		TableName:            aws.String(c.table),
 	}).Send(context.TODO())
 	if err == nil && len(resp.Item) > 0 {
-		ok = true
+		found = true
 		score = zScoreFromAV(resp.Item[skScore])
 	}
 
 	return
 }
 
-func (c Client) ZUNIONSTORE(destinationKey string, sourceKeys []string, aggregation ZAggregation, weights map[string]float64) (count int64, err error) {
+func (c Client) ZUNIONSTORE(destinationKey string, sourceKeys []string, aggregation ZAggregation, weights map[string]float64) (membersWithScores map[string]float64, err error) {
 	set, err := c.ZUNION(sourceKeys, aggregation, weights)
 	if err == nil {
-		count, err = c.ZADD(destinationKey, set, Flags{})
+		_, err = c.ZADD(destinationKey, set, Flags{})
 	}
 
-	return
+	return set, err
 }
 
 func zGetWeight(weights map[string]float64, key string) float64 {
