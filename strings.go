@@ -10,6 +10,9 @@ import (
 
 const emptySK = "/"
 
+// GET fetches the value at the given key. If the key does not exist, the ReturnValue will be Empty().
+//
+// Works similar to https://redis.io/commands/get
 func (c Client) GET(key string) (val ReturnValue, err error) {
 	resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
 		ConsistentRead: aws.Bool(c.consistentReads),
@@ -25,6 +28,13 @@ func (c Client) GET(key string) (val ReturnValue, err error) {
 	return
 }
 
+// SET stores the given Value at the given key. If called with no flags, like SET("key", "value", Flags{}), SET is
+// unconditional and is not expected to fail.
+//
+// The condition flags IfNotExists and IfAlreadyExists can be specified, and if they are
+// the SET becomes conditional and will return false if the condition fails.
+//
+// Works similar to https://redis.io/commands/set
 func (c Client) SET(key string, value Value, flags Flags) (ok bool, err error) {
 	builder := newExpresionBuilder()
 
@@ -60,10 +70,16 @@ func (c Client) SET(key string, value Value, flags Flags) (ok bool, err error) {
 	return true, nil
 }
 
+// SETNX is equivalent to SET(key, value, Flags{IfNotExists})
+//
+// Works similar to https://redis.io/commands/setnx
 func (c Client) SETNX(key string, value Value) (ok bool, err error) {
 	return c.SET(key, value, Flags{IfNotExists})
 }
 
+// GETSET gets the value at the key and atomically sets it to a new value.
+//
+// Works similar to https://redis.io/commands/getset
 func (c Client) GETSET(key string, value Value) (oldValue ReturnValue, err error) {
 	builder := newExpresionBuilder()
 	builder.updateSET(vk, value)
@@ -90,6 +106,10 @@ func (c Client) GETSET(key string, value Value) (oldValue ReturnValue, err error
 	return
 }
 
+// MGET fetches the given keys atomically in a transaction. The call is limited to 25 keys and 4MB.
+// See https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactGetItems.html
+//
+// Works similar to https://redis.io/commands/mget
 func (c Client) MGET(keys ...string) (values map[string]ReturnValue, err error) {
 	values = make(map[string]ReturnValue)
 	inputRequests := make([]dynamodb.TransactGetItem, len(keys))
@@ -123,11 +143,19 @@ func (c Client) MGET(keys ...string) (values map[string]ReturnValue, err error) 
 	return
 }
 
+// MSET sets the given keys and values atomically in a transaction. The call is limited to 25 keys and 4MB.
+// See https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactWriteItems.html
+//
+// Works similar to https://redis.io/commands/mset
 func (c Client) MSET(data map[string]Value) (err error) {
 	_, err = c.mset(data, Flags{})
 	return
 }
 
+// MSETNX sets the given keys and values atomically in a transaction, but only if none of the given
+// keys exist. If one or more of the keys already exist, nothing will be changed and MSETNX will return false.
+//
+// Works similar to https://redis.io/commands/msetnx
 func (c Client) MSETNX(data map[string]Value) (ok bool, err error) {
 	return c.mset(data, Flags{IfNotExists})
 }
