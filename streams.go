@@ -12,6 +12,16 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
+// XID holds a stream item ID, and consists of a timestamp (one second resolution)
+// and a sequence number.
+//
+// Most code will not need to generate XIDs – using XAutoID with XADD is the most common usage.
+// But if you do need to generate XIDs for insertion with XADD, the NewXID methods creates a complete XID.
+//
+// To generate time based XIDs for time range queries with XRANGE or XREVRANGE, use
+// NewTimeXID(startTime).First() and NewTimeXID(endTime).Last(). Calling Last() is especially important
+// because without it none of the items in the last second of the range will match – you need
+// the last possible sequence number in the last second of the range, which is what the Last() method provides.
 type XID string
 
 var ErrXGroupNotInitialized = errors.New("group not initialized")
@@ -19,12 +29,12 @@ var ErrXGroupNotInitialized = errors.New("group not initialized")
 const consumerKey = "cnk"
 const lastDeliveryTimestampKey = "ldk"
 const deliveryCountKey = "dck"
-const (
-	XStart  XID = "00000000000000000000-00000000000000000000"
-	XEnd    XID = "99999999999999999999-99999999999999999999"
-	XAutoID XID = "*"
-)
 
+const XStart XID = "00000000000000000000-00000000000000000000"
+const XEnd XID = "99999999999999999999-99999999999999999999"
+const XAutoID XID = "*"
+
+// NewXID creates an XID with the given timestamp and sequence number.
 func NewXID(ts time.Time, seq uint64) XID {
 	timePart := fmt.Sprintf("%020d", ts.Unix())
 	sequencePart := fmt.Sprintf("%020d", seq)
@@ -32,11 +42,23 @@ func NewXID(ts time.Time, seq uint64) XID {
 	return XID(strings.Join([]string{timePart, sequencePart}, "-"))
 }
 
+// NewTimeXID creates an XID with the given timestamp. To get the first or the last
+// XID in this timestamp, use the First() or the Last() methods. This is especially
+// important when using constructed XIDs inside a range call like XRANGE or XREVRANGE.
+func NewTimeXID(ts time.Time) XID {
+	return NewXID(ts, 0)
+}
+
 func (xid XID) String() string {
 	return string(xid)
 }
 
-const sequenceSK = "_redimo/sequence"
+func xSequenceKey(key string) keyDef {
+	return keyDef{
+		pk: strings.Join([]string{"_redimo", "seq", key}, "/"),
+		sk: "seq",
+	}
+}
 
 func (xid XID) sequenceUpdateAction(key string, table string) dynamodb.TransactWriteItem {
 	builder := newExpresionBuilder()
@@ -48,15 +70,25 @@ func (xid XID) sequenceUpdateAction(key string, table string) dynamodb.TransactW
 			ConditionExpression:       builder.conditionExpression(),
 			ExpressionAttributeNames:  builder.expressionAttributeNames(),
 			ExpressionAttributeValues: builder.expressionAttributeValues(),
-			Key:                       keyDef{pk: key, sk: sequenceSK}.toAV(),
+			Key:                       xSequenceKey(key).toAV(),
 			TableName:                 aws.String(table),
 			UpdateExpression:          builder.updateExpression(),
 		},
 	}
 }
 
+// Next returns the next valid XID at the same time – it simply returns a new XID with the next sequence number.
 func (xid XID) Next() XID {
 	return NewXID(xid.Time(), xid.Seq()+1)
+}
+
+// Prev returns the previous valid XID at the same time – it simply returns a new XID with the previous sequence number.
+func (xid XID) Prev() XID {
+	if xid.Seq() <= 1 {
+		return xid
+	}
+
+	return NewXID(xid.Time(), xid.Seq()-1)
 }
 
 func (xid XID) Time() time.Time {
@@ -75,6 +107,21 @@ func (xid XID) Seq() uint64 {
 
 func (xid XID) av() dynamodb.AttributeValue {
 	return dynamodb.AttributeValue{S: aws.String(xid.String())}
+}
+
+// First returns the first valid XID at this timestamp. Useful for the start parameter of XRANGE or XREVRANGE.
+func (xid XID) First() XID {
+	timePart := fmt.Sprintf("%020d", xid.Time().Unix())
+	return XID(strings.Join([]string{timePart, "00000000000000000000"}, "-"))
+}
+
+// Last returns the last valid XID at this timestamp. Useful for the end parameter of XRANGE or XREVRANGE.
+// Note that if the XID used as an end in the range simply based on the timestamp, the sequence number will be zero,
+// so the query will exclude all the items in end second. This will effectively transform the query to '< endTime'
+// instead of '<= endTime'. Using Last() prevents this mistake, if that is your intention.
+func (xid XID) Last() XID {
+	timePart := fmt.Sprintf("%020d", xid.Time().Unix())
+	return XID(strings.Join([]string{timePart, "99999999999999999999"}, "-"))
 }
 
 type StreamItem struct {
@@ -178,6 +225,18 @@ func (c Client) XACK(key string, group string, ids ...XID) (acknowledgedIds []XI
 	return
 }
 
+// XADD adds the given fields as a item on the stream at key. If the stream does not exist,
+// it will be initialized.
+//
+// If the XID passed in is XAutoID, an ID will be automatically generated on the current time
+// and a sequence generator.
+//
+// Note that if you pass in your own ID, the stream will never allow you to insert an item with
+// an ID less than the greatest ID present in the stream – the stream can only move forwards. This
+// guarantees that if you've read entries up to a given XID using XREAD, you can always continue
+// reading from that last XID without fear of missing anything, because the IDs are always increasing.
+//
+// Works similar to https://redis.io/commands/xadd
 func (c Client) XADD(key string, id XID, fields map[string]Value) (returnedID XID, err error) {
 	retry := true
 	retryCount := 0
@@ -187,7 +246,7 @@ func (c Client) XADD(key string, id XID, fields map[string]Value) (returnedID XI
 
 		if id == XAutoID {
 			now := time.Now()
-			newSequence, err := c.HINCRBY(key, "_redimo/sequence/"+fmt.Sprintf("%020d", now.Unix()), 1)
+			newSequence, err := c.INCR(strings.Join([]string{"_redimo", "xcount", key}, "/"))
 
 			if err != nil {
 				return id, err
@@ -209,15 +268,19 @@ func (c Client) XADD(key string, id XID, fields map[string]Value) (returnedID XI
 			TransactItems: actions,
 		}).Send(context.TODO())
 		if err != nil {
-			if conditionFailureError(err) && retryCount == 0 && c.xInit(key) == nil {
-				// Steam may not have been initialized, but should be now
+			if conditionFailureError(err) && retryCount == 0 {
+				// Steam may not have been initialized, let's try initializing
+				err = c.xInit(key)
+				if err != nil {
+					return returnedID, err
+				}
 			} else {
-				// err was an actual error
 				return returnedID, err
 			}
 		} else {
 			retry = false
 		}
+		// Likely happened because of contention, let's retry once.
 		retryCount++
 	}
 
@@ -245,7 +308,7 @@ func (c Client) xInitAction(key string) dynamodb.TransactWriteItem {
 			ConditionExpression:       builder.conditionExpression(),
 			ExpressionAttributeNames:  builder.expressionAttributeNames(),
 			ExpressionAttributeValues: builder.expressionAttributeValues(),
-			Key:                       keyDef{pk: key, sk: sequenceSK}.toAV(),
+			Key:                       xSequenceKey(key).toAV(),
 			TableName:                 aws.String(c.table),
 			UpdateExpression:          builder.updateExpression(),
 		},
@@ -290,6 +353,13 @@ func (c Client) XCLAIM(key string, group string, consumer string, lastDeliveredB
 	return items, nil
 }
 
+// XDEL removes the given IDs and returns the IDs that were actually deleted as part of this operation.
+//
+// Note that this operation is not atomic across given IDs – it's possible that an error is returned
+// based on a problem deleting one of the IDs when the others have been deleted. Even when an error is returned,
+// the items that were deleted will still be populated.
+//
+// Works similar to https://redis.io/commands/xdel
 func (c Client) XDEL(key string, ids ...XID) (deletedItems []XID, err error) {
 	for _, id := range ids {
 		resp, err := c.ddbClient.DeleteItemRequest(&dynamodb.DeleteItemInput{
@@ -427,6 +497,25 @@ func (c Client) XPENDING(key string, group string, count int64) (pendingItems []
 	return
 }
 
+// XRANGE fetches the stream records between two XIDs, inclusive of both the start and end IDs, limited to the count.
+//
+// If you receive the entire count you've asked for, it's reasonable to suppose there might be more items in the given
+// range that were not returned because they would exceed the count – in this case you can call the XID.Next() method
+// on the last received stream ID for an XID to use as the start of the next call.
+//
+// Common uses include fetching a single item based on XID, which would be
+//     XRANGE(key, id, id, 1)
+// or fetching records in the month of February, like
+//     XRANGE(key, NewTimeXID(beginningOfFebruary).First(), NewTimeXID(endOfFebruary).Last(), 1000)
+//     XRANGE(key, NewTimeXID(beginningOfFebruary).First(), NewTimeXID(beginningOfMarch).First(), 1000)
+// Note that the two calls are equivalent, because this operation uses the DynamoDB BETWEEN operator, which translates to
+//     start <= id <= end
+// There is are no offset or pagination parameters required, because when the full count is hit the next page of items can
+// be fetched as follows:
+//     XRANGE(key, lastFetchedItemID.Next(), NewTimeXID(endOfFebruary).Last(), 1000)
+// See the XID docs for more information on how to generate start and stop XIDs based on time.
+//
+// Works similar to https://redis.io/commands/xrange
 func (c Client) XRANGE(key string, start, stop XID, count int64) (streamItems []StreamItem, err error) {
 	return c.xRange(key, start, stop, count, true)
 }
@@ -503,6 +592,13 @@ func (c Client) xGroupCursorPushAction(key string, group string, id XID) dynamod
 	}
 }
 
+// XREAD reads items sequentially from a stream. The structure of a stream guarantees that the XIDs are
+// always increasing. This implies that calling XREAD in a loop and passing in the XID of the last item read
+// will allow iteration over all items reliably.
+//
+// To start reading a stream from the beginning, use the special XStart XID.
+//
+// Works similar to https://redis.io/commands/xread
 func (c Client) XREAD(key string, from XID, count int64) (items []StreamItem, err error) {
 	return c.XRANGE(key, from.Next(), XEnd, count)
 }
@@ -619,6 +715,13 @@ func (c Client) XREADGROUP(key string, group string, consumer string, option XRe
 	return items, errors.New("too much contention")
 }
 
+// XREVRANGE is similar to XRANGE, but in reverse order. The stream items in descending chronological order. Using the
+// same example as XRANGE, when fetching items in reverse order there are some differences when paginating. The first
+// set of records can be fetched using:
+//     XRANGE(key, NewTimeXID(endOfFebruary).Last(), NewTimeXID(beginningOfFebruary).First(), 1000)
+// he next page can be fetched using
+//     XRANGE(key, lastFetchedItemID.Prev(), NewTimeXID(beginningOfFebruary).First(), 1000)
+// Works similar to https://redis.io/commands/xrevrange
 func (c Client) XREVRANGE(key string, end, start XID, count int64) (streamItems []StreamItem, err error) {
 	return c.xRange(key, start, end, count, false)
 }

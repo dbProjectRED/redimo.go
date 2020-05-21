@@ -270,3 +270,49 @@ func TestStreamsConsumerGroupACK(t *testing.T) {
 	assert.Equal(t, pendingItems[0].ID, item3[0].ID)
 	assert.Equal(t, consumer1, pendingItems[0].Consumer)
 }
+
+func TestXIDGeneration(t *testing.T) {
+	assert.Equal(t, "00000000000000012345-00000000000000000000", NewTimeXID(time.Unix(12345, 0)).First().String())
+	assert.Equal(t, "00000000000000012345-99999999999999999999", NewTimeXID(time.Unix(12345, 0)).Last().String())
+}
+
+func TestRanges(t *testing.T) {
+	c := newClient(t)
+	allItems := make([]StreamItem, 0, 30)
+	key := "x1"
+
+	for i := 0; i < 30; i++ {
+		fields := map[string]Value{"i": IntValue{int64(i)}}
+		insertedID, err := c.XADD(key, XAutoID, fields)
+
+		allItems = append(allItems, StreamItem{ID: insertedID, Fields: map[string]ReturnValue{"i": {IntValue{int64(i)}.ToAV()}}})
+
+		assert.NoError(t, err)
+	}
+
+	r1, err := c.XRANGE(key, XStart, XEnd, 5)
+	assert.NoError(t, err)
+	assert.Equal(t, allItems[0:5], r1)
+
+	r2, err := c.XRANGE(key, r1[len(r1)-1].ID.Next(), XEnd, 5)
+	assert.NoError(t, err)
+	assert.Equal(t, allItems[5:10], r2)
+
+	reverse := func(a []StreamItem) []StreamItem {
+		for left, right := 0, len(a)-1; left < right; left, right = left+1, right-1 {
+			a[left], a[right] = a[right], a[left]
+		}
+
+		return a
+	}
+
+	rr1, err := c.XREVRANGE(key, XEnd, XStart, 5)
+	lastFetchedItemID := rr1[len(rr1)-1].ID
+
+	assert.NoError(t, err)
+	assert.Equal(t, allItems[25:30], reverse(rr1))
+
+	rr2, err := c.XREVRANGE(key, lastFetchedItemID.Prev(), XStart, 5)
+	assert.NoError(t, err)
+	assert.Equal(t, allItems[20:25], reverse(rr2))
+}
