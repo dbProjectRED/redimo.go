@@ -175,6 +175,9 @@ func (c Client) GEOPOS(key string, members ...string) (locations map[string]GLoc
 // The GLocation type has convenience methods to calculate the distance between points, this can be used
 // to sort the locations as required.
 //
+// Cost is O(N) where N is the number of locations inside the square / bounding box that contains the circle
+// we're searching inside.
+//
 // Works similar to https://redis.io/commands/georadius
 func (c Client) GEORADIUS(key string, center GLocation, radius float64, radiusUnit GUnit, count int64) (positions map[string]GLocation, err error) {
 	positions = make(map[string]GLocation)
@@ -234,6 +237,9 @@ func (c Client) GEORADIUS(key string, center GLocation, radius float64, radiusUn
 //
 // The GLocation type has convenience methods to calculate the distance between points, this can be used
 // to sort the locations as required.
+//
+// Cost is O(N) where N is the number of locations inside the square / bounding box that contains the circle
+// we're searching inside.
 //
 // Works similar to https://redis.io/commands/georadiusbymember
 func (c Client) GEORADIUSBYMEMBER(key string, member string, radius float64, radiusUnit GUnit, count int64) (positions map[string]GLocation, err error) {
