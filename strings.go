@@ -16,7 +16,7 @@ const emptySK = "/"
 func (c Client) GET(key string) (val ReturnValue, err error) {
 	resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
 		ConsistentRead: aws.Bool(c.consistentReads),
-		Key:            keyDef{pk: key, sk: emptySK}.toAV(),
+		Key:            keyDef{pk: key, sk: emptySK}.toAV(c),
 		TableName:      aws.String(c.table),
 	}).Send(context.TODO())
 	if err != nil || len(resp.Item) == 0 {
@@ -41,11 +41,11 @@ func (c Client) SET(key string, value Value, flag Flag) (ok bool, err error) {
 	builder.updateSET(vk, value)
 
 	if flag == IfNotExists {
-		builder.addConditionNotExists(pk)
+		builder.addConditionNotExists(c.pk)
 	}
 
 	if flag == IfAlreadyExists {
-		builder.addConditionExists(pk)
+		builder.addConditionExists(c.pk)
 	}
 
 	_, err = c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
@@ -56,7 +56,7 @@ func (c Client) SET(key string, value Value, flag Flag) (ok bool, err error) {
 		Key: keyDef{
 			pk: key,
 			sk: emptySK,
-		}.toAV(),
+		}.toAV(c),
 		TableName: aws.String(c.table),
 	}).Send(context.TODO())
 	if conditionFailureError(err) {
@@ -92,7 +92,7 @@ func (c Client) GETSET(key string, value Value) (oldValue ReturnValue, err error
 		Key: keyDef{
 			pk: key,
 			sk: emptySK,
-		}.toAV(),
+		}.toAV(c),
 		ReturnValues: dynamodb.ReturnValueAllOld,
 		TableName:    aws.String(c.table),
 	}).Send(context.TODO())
@@ -101,7 +101,7 @@ func (c Client) GETSET(key string, value Value) (oldValue ReturnValue, err error
 		return
 	}
 
-	oldValue = parseItem(resp.Attributes).val
+	oldValue = parseItem(resp.Attributes, c).val
 
 	return
 }
@@ -120,8 +120,8 @@ func (c Client) MGET(keys ...string) (values map[string]ReturnValue, err error) 
 				Key: keyDef{
 					pk: key,
 					sk: emptySK,
-				}.toAV(),
-				ProjectionExpression: aws.String(strings.Join([]string{vk, pk}, ", ")),
+				}.toAV(c),
+				ProjectionExpression: aws.String(strings.Join([]string{vk, c.pk}, ", ")),
 				TableName:            aws.String(c.table),
 			},
 		}
@@ -136,7 +136,7 @@ func (c Client) MGET(keys ...string) (values map[string]ReturnValue, err error) 
 	}
 
 	for _, item := range resp.Responses {
-		pi := parseItem(item.Item)
+		pi := parseItem(item.Item, c)
 		values[pi.pk] = pi.val
 	}
 
@@ -167,7 +167,7 @@ func (c Client) mset(data map[string]Value, flags Flags) (ok bool, err error) {
 		builder := newExpresionBuilder()
 
 		if flags.has(IfNotExists) {
-			builder.addConditionNotExists(pk)
+			builder.addConditionNotExists(c.pk)
 		}
 
 		builder.updateSET(vk, v)
@@ -180,7 +180,7 @@ func (c Client) mset(data map[string]Value, flags Flags) (ok bool, err error) {
 				Key: keyDef{
 					pk: k,
 					sk: emptySK,
-				}.toAV(),
+				}.toAV(c),
 				TableName:        aws.String(c.table),
 				UpdateExpression: builder.updateExpression(),
 			},
@@ -220,7 +220,7 @@ func (c Client) incr(key string, value Value) (newValue ReturnValue, err error) 
 		ExpressionAttributeValues: map[string]dynamodb.AttributeValue{
 			":delta": value.ToAV(),
 		},
-		Key:              keyDef{pk: key, sk: emptySK}.toAV(),
+		Key:              keyDef{pk: key, sk: emptySK}.toAV(c),
 		ReturnValues:     dynamodb.ReturnValueAllNew,
 		TableName:        aws.String(c.table),
 		UpdateExpression: aws.String("ADD #val :delta"),

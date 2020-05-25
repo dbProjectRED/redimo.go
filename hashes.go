@@ -14,12 +14,12 @@ func (c Client) HGET(key string, field string) (val ReturnValue, err error) {
 		Key: keyDef{
 			pk: key,
 			sk: field,
-		}.toAV(),
+		}.toAV(c),
 		ProjectionExpression: aws.String(strings.Join([]string{vk}, ", ")),
 		TableName:            aws.String(c.table),
 	}).Send(context.TODO())
 	if err == nil {
-		val = parseItem(resp.Item).val
+		val = parseItem(resp.Item, c).val
 	}
 
 	return
@@ -36,7 +36,7 @@ func (c Client) HSET(key string, fieldValues map[string]Value) (newlySavedFields
 			ConditionExpression:       builder.conditionExpression(),
 			ExpressionAttributeNames:  builder.expressionAttributeNames(),
 			ExpressionAttributeValues: builder.expressionAttributeValues(),
-			Key:                       keyDef{pk: key, sk: field}.toAV(),
+			Key:                       keyDef{pk: key, sk: field}.toAV(c),
 			ReturnValues:              dynamodb.ReturnValueAllOld,
 			TableName:                 aws.String(c.table),
 			UpdateExpression:          builder.updateExpression(),
@@ -69,7 +69,7 @@ func (c Client) HMSET(key string, fieldValues map[string]Value) (err error) {
 				Key: keyDef{
 					pk: key,
 					sk: field,
-				}.toAV(),
+				}.toAV(c),
 				TableName:        aws.String(c.table),
 				UpdateExpression: builder.updateExpression(),
 			},
@@ -92,8 +92,8 @@ func (c Client) HMGET(key string, fields ...string) (values map[string]ReturnVal
 			Key: keyDef{
 				pk: key,
 				sk: field,
-			}.toAV(),
-			ProjectionExpression: aws.String(strings.Join([]string{sk, vk}, ", ")),
+			}.toAV(c),
+			ProjectionExpression: aws.String(strings.Join([]string{c.sk, vk}, ", ")),
 			TableName:            aws.String(c.table),
 		}}
 	}
@@ -104,7 +104,7 @@ func (c Client) HMGET(key string, fields ...string) (values map[string]ReturnVal
 
 	if err == nil {
 		for _, r := range resp.Responses {
-			pi := parseItem(r.Item)
+			pi := parseItem(r.Item, c)
 			values[pi.sk] = pi.val
 		}
 	}
@@ -118,7 +118,7 @@ func (c Client) HDEL(key string, fields ...string) (deletedFields []string, err 
 			Key: keyDef{
 				pk: key,
 				sk: field,
-			}.toAV(),
+			}.toAV(c),
 			ReturnValues: dynamodb.ReturnValueAllOld,
 			TableName:    aws.String(c.table),
 		}).Send(context.TODO())
@@ -140,8 +140,8 @@ func (c Client) HEXISTS(key string, field string) (exists bool, err error) {
 		Key: keyDef{
 			pk: key,
 			sk: field,
-		}.toAV(),
-		ProjectionExpression: aws.String(strings.Join([]string{pk}, ", ")),
+		}.toAV(c),
+		ProjectionExpression: aws.String(strings.Join([]string{c.pk}, ", ")),
 		TableName:            aws.String(c.table),
 	}).Send(context.TODO())
 	if err == nil && len(resp.Item) > 0 {
@@ -159,7 +159,7 @@ func (c Client) HGETALL(key string) (fieldValues map[string]ReturnValue, err err
 
 	for hasMoreResults {
 		builder := newExpresionBuilder()
-		builder.addConditionEquality(pk, StringValue{key})
+		builder.addConditionEquality(c.pk, StringValue{key})
 
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 			ConsistentRead:            aws.Bool(c.consistentReads),
@@ -175,7 +175,7 @@ func (c Client) HGETALL(key string) (fieldValues map[string]ReturnValue, err err
 		}
 
 		for _, item := range resp.Items {
-			parsedItem := parseItem(item)
+			parsedItem := parseItem(item, c)
 			fieldValues[parsedItem.sk] = parsedItem.val
 		}
 
@@ -206,7 +206,7 @@ func (c Client) hIncr(key string, field string, delta Value) (after ReturnValue,
 		ExpressionAttributeValues: map[string]dynamodb.AttributeValue{
 			":delta": delta.ToAV(),
 		},
-		Key:              keyDef{pk: key, sk: field}.toAV(),
+		Key:              keyDef{pk: key, sk: field}.toAV(c),
 		ReturnValues:     dynamodb.ReturnValueAllNew,
 		TableName:        aws.String(c.table),
 		UpdateExpression: aws.String("ADD #val :delta"),
@@ -236,7 +236,7 @@ func (c Client) HKEYS(key string) (keys []string, err error) {
 
 	for hasMoreResults {
 		builder := newExpresionBuilder()
-		builder.addConditionEquality(pk, StringValue{key})
+		builder.addConditionEquality(c.pk, StringValue{key})
 
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 			ConsistentRead:            aws.Bool(c.consistentReads),
@@ -245,7 +245,7 @@ func (c Client) HKEYS(key string) (keys []string, err error) {
 			ExpressionAttributeValues: builder.expressionAttributeValues(),
 			KeyConditionExpression:    builder.conditionExpression(),
 			TableName:                 aws.String(c.table),
-			ProjectionExpression:      aws.String(sk),
+			ProjectionExpression:      aws.String(c.sk),
 			Select:                    dynamodb.SelectSpecificAttributes,
 		}).Send(context.TODO())
 
@@ -254,7 +254,7 @@ func (c Client) HKEYS(key string) (keys []string, err error) {
 		}
 
 		for _, item := range resp.Items {
-			parsedItem := parseItem(item)
+			parsedItem := parseItem(item, c)
 			keys = append(keys, parsedItem.sk)
 		}
 
@@ -286,7 +286,7 @@ func (c Client) HLEN(key string) (count int64, err error) {
 
 	for hasMoreResults {
 		builder := newExpresionBuilder()
-		builder.addConditionEquality(pk, StringValue{key})
+		builder.addConditionEquality(c.pk, StringValue{key})
 
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 			ConsistentRead:            aws.Bool(c.consistentReads),
@@ -317,7 +317,7 @@ func (c Client) HLEN(key string) (count int64, err error) {
 func (c Client) HSETNX(key string, field string, value Value) (ok bool, err error) {
 	builder := newExpresionBuilder()
 	builder.updateSET(vk, value)
-	builder.addConditionNotExists(pk)
+	builder.addConditionNotExists(c.pk)
 
 	_, err = c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
 		ConditionExpression:       builder.conditionExpression(),
@@ -326,7 +326,7 @@ func (c Client) HSETNX(key string, field string, value Value) (ok bool, err erro
 		Key: keyDef{
 			pk: key,
 			sk: field,
-		}.toAV(),
+		}.toAV(c),
 		TableName:        aws.String(c.table),
 		UpdateExpression: builder.updateExpression(),
 	}).Send(context.TODO())

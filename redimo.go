@@ -14,27 +14,49 @@ type Client struct {
 	ddbClient       *dynamodb.Client
 	consistentReads bool
 	table           string
-	indexes         map[string]string
+	index           string
+	pk              string
+	sk              string
+	skN             string
 }
 
-func (c Client) getIndex(attribute string) *string {
-	if c.indexes == nil {
-		return nil
-	}
+func (c Client) EventuallyConsistent() Client {
+	c.consistentReads = false
+	return c
+}
 
-	index, found := c.indexes[attribute]
-	if !found {
-		return nil
-	}
+func (c Client) Table(table, index string) Client {
+	c.table = table
+	c.index = index
+	return c
+}
 
-	return aws.String(index)
+func (c Client) Attributes(pk string, sk string, skN string) Client {
+	c.pk = pk
+	c.sk = sk
+	c.skN = skN
+	return c
+}
+
+func (c Client) StronglyConsistent() Client {
+	c.consistentReads = true
+	return c
+}
+
+func NewClient(service *dynamodb.Client) Client {
+	return Client{
+		ddbClient:       service,
+		consistentReads: true,
+		table:           "redimo",
+		index:           "redimo_index",
+		pk:              "pk",
+		sk:              "sk",
+		skN:             "skN",
+	}
 }
 
 const (
-	pk  = "pk"
-	sk  = "sk"
-	vk  = "val"
-	skN = "skN"
+	vk = "val"
 )
 
 type expressionBuilder struct {
@@ -155,12 +177,12 @@ type keyDef struct {
 	sk string
 }
 
-func (k keyDef) toAV() map[string]dynamodb.AttributeValue {
+func (k keyDef) toAV(c Client) map[string]dynamodb.AttributeValue {
 	m := map[string]dynamodb.AttributeValue{
-		pk: {
+		c.pk: {
 			S: aws.String(k.pk),
 		},
-		sk: {
+		c.sk: {
 			S: aws.String(k.sk),
 		},
 	}
@@ -173,15 +195,15 @@ type itemDef struct {
 	val ReturnValue
 }
 
-func parseKey(avm map[string]dynamodb.AttributeValue) keyDef {
+func parseKey(avm map[string]dynamodb.AttributeValue, c Client) keyDef {
 	return keyDef{
-		pk: aws.StringValue(avm[pk].S),
-		sk: aws.StringValue(avm[sk].S),
+		pk: aws.StringValue(avm[c.pk].S),
+		sk: aws.StringValue(avm[c.sk].S),
 	}
 }
 
-func parseItem(avm map[string]dynamodb.AttributeValue) (item itemDef) {
-	item.keyDef = parseKey(avm)
+func parseItem(avm map[string]dynamodb.AttributeValue, c Client) (item itemDef) {
+	item.keyDef = parseKey(avm, c)
 	item.val = ReturnValue{avm[vk]}
 
 	return

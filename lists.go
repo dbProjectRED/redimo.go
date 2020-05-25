@@ -31,7 +31,6 @@ const (
 )
 const skLeft = "left"
 const skRight = "right"
-const skEndMarker = skN
 
 type listNode struct {
 	key     string
@@ -51,25 +50,25 @@ func (c Client) listCountKey(key string) keyDef {
 	}
 }
 
-func (ln listNode) toAV() map[string]dynamodb.AttributeValue {
+func (ln listNode) toAV(c Client) map[string]dynamodb.AttributeValue {
 	avm := map[string]dynamodb.AttributeValue{}
-	avm[pk] = StringValue{ln.key}.ToAV()
-	avm[sk] = StringValue{ln.address}.ToAV()
+	avm[c.pk] = StringValue{ln.key}.ToAV()
+	avm[c.sk] = StringValue{ln.address}.ToAV()
 	avm[skLeft] = StringValue{ln.left}.ToAV()
 	avm[skRight] = StringValue{ln.right}.ToAV()
 	avm[vk] = ln.value.av
 
 	if ln.isHead() || ln.isTail() {
-		avm[skEndMarker] = IntValue{1}.ToAV()
+		avm[c.skN] = IntValue{1}.ToAV()
 	}
 
 	return avm
 }
 
-func (ln listNode) keyAV() map[string]dynamodb.AttributeValue {
+func (ln listNode) keyAV(c Client) map[string]dynamodb.AttributeValue {
 	avm := map[string]dynamodb.AttributeValue{}
-	avm[pk] = StringValue{ln.key}.ToAV()
-	avm[sk] = StringValue{ln.address}.ToAV()
+	avm[c.pk] = StringValue{ln.key}.ToAV()
+	avm[c.sk] = StringValue{ln.address}.ToAV()
 
 	return avm
 }
@@ -136,7 +135,7 @@ func (ln *listNode) setPrev(side LSide, address string) {
 	}
 }
 
-func (ln listNode) updateBothSidesAction(newLeft string, newRight string, table string) dynamodb.TransactWriteItem {
+func (ln listNode) updateBothSidesAction(newLeft string, newRight string, c Client) dynamodb.TransactWriteItem {
 	updater := newExpresionBuilder()
 	updater.addConditionEquality(skLeft, StringValue{ln.left})
 	updater.addConditionEquality(skRight, StringValue{ln.right})
@@ -144,9 +143,9 @@ func (ln listNode) updateBothSidesAction(newLeft string, newRight string, table 
 	updater.updateSET(skRight, StringValue{newRight})
 
 	if newLeft == listNull || newRight == listNull {
-		updater.updateSET(skEndMarker, IntValue{1})
+		updater.updateSET(c.skN, IntValue{1})
 	} else {
-		updater.updateSET(skEndMarker, IntValue{0})
+		updater.updateSET(c.skN, IntValue{0})
 	}
 
 	return dynamodb.TransactWriteItem{
@@ -154,23 +153,23 @@ func (ln listNode) updateBothSidesAction(newLeft string, newRight string, table 
 			ConditionExpression:       updater.conditionExpression(),
 			ExpressionAttributeNames:  updater.expressionAttributeNames(),
 			ExpressionAttributeValues: updater.expressionAttributeValues(),
-			Key:                       ln.keyAV(),
-			TableName:                 aws.String(table),
+			Key:                       ln.keyAV(c),
+			TableName:                 aws.String(c.table),
 			UpdateExpression:          updater.updateExpression(),
 		},
 	}
 }
 
-func (ln listNode) updateSideAction(side LSide, newAddress string, table string) dynamodb.TransactWriteItem {
+func (ln listNode) updateSideAction(side LSide, newAddress string, c Client) dynamodb.TransactWriteItem {
 	updater := newExpresionBuilder()
 	updater.addConditionEquality(ln.prevAttr(side), StringValue{ln.prev(side)})
 	updater.addConditionEquality(ln.nextAttr(side), StringValue{ln.next(side)})
 	updater.updateSET(ln.prevAttr(side), StringValue{newAddress})
 
 	if newAddress == listNull || ln.next(side) == listNull {
-		updater.updateSET(skEndMarker, IntValue{1})
+		updater.updateSET(c.skN, IntValue{1})
 	} else {
-		updater.updateSET(skEndMarker, IntValue{0})
+		updater.updateSET(c.skN, IntValue{0})
 	}
 
 	return dynamodb.TransactWriteItem{
@@ -178,8 +177,8 @@ func (ln listNode) updateSideAction(side LSide, newAddress string, table string)
 			ConditionExpression:       updater.conditionExpression(),
 			ExpressionAttributeNames:  updater.expressionAttributeNames(),
 			ExpressionAttributeValues: updater.expressionAttributeValues(),
-			Key:                       ln.keyAV(),
-			TableName:                 aws.String(table),
+			Key:                       ln.keyAV(c),
+			TableName:                 aws.String(c.table),
 			UpdateExpression:          updater.updateExpression(),
 		},
 	}
@@ -193,27 +192,27 @@ func (ln listNode) isHead() bool {
 	return ln.left == listNull
 }
 
-func (ln listNode) putAction(table string) dynamodb.TransactWriteItem {
+func (ln listNode) putAction(c Client) dynamodb.TransactWriteItem {
 	return dynamodb.TransactWriteItem{
 		Put: &dynamodb.Put{
-			Item:      ln.toAV(),
-			TableName: aws.String(table),
+			Item:      ln.toAV(c),
+			TableName: aws.String(c.table),
 		},
 	}
 }
 
-func (ln listNode) deleteAction(table string) dynamodb.TransactWriteItem {
+func (ln listNode) deleteAction(c Client) dynamodb.TransactWriteItem {
 	return dynamodb.TransactWriteItem{
 		Delete: &dynamodb.Delete{
-			Key:       ln.keyAV(),
-			TableName: aws.String(table),
+			Key:       ln.keyAV(c),
+			TableName: aws.String(c.table),
 		},
 	}
 }
 
-func lParseNode(avm map[string]dynamodb.AttributeValue) (ln listNode) {
-	ln.key = aws.StringValue(avm[pk].S)
-	ln.address = aws.StringValue(avm[sk].S)
+func lParseNode(avm map[string]dynamodb.AttributeValue, c Client) (ln listNode) {
+	ln.key = aws.StringValue(avm[c.pk].S)
+	ln.address = aws.StringValue(avm[c.sk].S)
 	ln.left = aws.StringValue(avm[skLeft].S)
 	ln.right = aws.StringValue(avm[skRight].S)
 	ln.value = ReturnValue{avm[vk]}
@@ -286,9 +285,9 @@ func (c Client) LINSERT(key string, side LSide, pivot, element Value) (newLength
 		newNode.setPrev(side, otherNode.address)
 		newNode.setNext(side, pivotNode.address)
 
-		actions = append(actions, otherNode.updateSideAction(side.otherSide(), newNode.address, c.table))
-		actions = append(actions, pivotNode.updateSideAction(side, newNode.address, c.table))
-		actions = append(actions, newNode.putAction(c.table))
+		actions = append(actions, otherNode.updateSideAction(side.otherSide(), newNode.address, c))
+		actions = append(actions, pivotNode.updateSideAction(side, newNode.address, c))
+		actions = append(actions, newNode.putAction(c))
 		actions = append(actions, c.listCountDeltaAction(key, 1))
 	}
 
@@ -332,11 +331,11 @@ func (c Client) listNodeAtPivot(key string, pivot Value, side LSide) (node listN
 func (c Client) LLEN(key string) (length int64, err error) {
 	resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
 		ConsistentRead: aws.Bool(true),
-		Key:            c.listCountKey(key).toAV(),
+		Key:            c.listCountKey(key).toAV(c),
 		TableName:      aws.String(c.table),
 	}).Send(context.TODO())
 	if err == nil {
-		length = parseItem(resp.Item).val.Int()
+		length = parseItem(resp.Item, c).val.Int()
 	}
 
 	return
@@ -381,10 +380,10 @@ func (c Client) listPopActions(key string, side LSide) (element ReturnValue, act
 
 		penultimateKeyNode.setPrev(side, endNode.address)
 
-		actions = append(actions, penultimateKeyNode.updateSideAction(side, listNull, c.table))
+		actions = append(actions, penultimateKeyNode.updateSideAction(side, listNull, c))
 	}
 
-	actions = append(actions, endNode.deleteAction(c.table))
+	actions = append(actions, endNode.deleteAction(c))
 	actions = append(actions, c.listCountDeltaAction(key, -1))
 
 	return
@@ -440,7 +439,7 @@ func (c Client) listPushActions(key string, element Value, side LSide, flags Fla
 		node.setNext(side, currentEndNode.address)
 		node.setPrev(side, listNull)
 
-		actions = append(actions, currentEndNode.updateSideAction(side, node.address, c.table))
+		actions = append(actions, currentEndNode.updateSideAction(side, node.address, c))
 	} else {
 		// start the list with a constant address - this prevents multiple calls from overwriting it
 		node.address = key
@@ -448,7 +447,7 @@ func (c Client) listPushActions(key string, element Value, side LSide, flags Fla
 		node.right = listNull
 	}
 
-	actions = append(actions, node.putAction(c.table))
+	actions = append(actions, node.putAction(c))
 
 	actions = append(actions, c.listCountDeltaAction(key, 1))
 
@@ -461,7 +460,7 @@ func (c Client) listCountDeltaAction(key string, delta int64) dynamodb.TransactW
 			ExpressionAttributeValues: map[string]dynamodb.AttributeValue{
 				":delta": IntValue{delta}.ToAV(),
 			},
-			Key:              c.listCountKey(key).toAV(),
+			Key:              c.listCountKey(key).toAV(c),
 			TableName:        aws.String(c.table),
 			UpdateExpression: aws.String(fmt.Sprintf("ADD %v :delta", vk)),
 		},
@@ -470,14 +469,14 @@ func (c Client) listCountDeltaAction(key string, delta int64) dynamodb.TransactW
 
 func (c Client) listFindEnd(key string, side LSide) (node listNode, found bool, err error) {
 	queryCondition := newExpresionBuilder()
-	queryCondition.addConditionEquality(pk, StringValue{key})
-	queryCondition.addConditionEquality(skEndMarker, IntValue{1})
+	queryCondition.addConditionEquality(c.pk, StringValue{key})
+	queryCondition.addConditionEquality(c.skN, IntValue{1})
 
 	resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 		ConsistentRead:            aws.Bool(true),
 		ExpressionAttributeNames:  queryCondition.expressionAttributeNames(),
 		ExpressionAttributeValues: queryCondition.expressionAttributeValues(),
-		IndexName:                 c.getIndex(skEndMarker),
+		IndexName:                 aws.String(c.index),
 		KeyConditionExpression:    queryCondition.conditionExpression(),
 		Limit:                     aws.Int64(capCount),
 		TableName:                 aws.String(c.table),
@@ -488,7 +487,7 @@ func (c Client) listFindEnd(key string, side LSide) (node listNode, found bool, 
 	}
 
 	for _, item := range resp.Items {
-		node = lParseNode(item)
+		node = lParseNode(item, c)
 		node, found, err = c.listGetByAddress(key, node.address)
 
 		if !found || err != nil {
@@ -509,7 +508,7 @@ func (c Client) listGetByAddress(key string, address string) (node listNode, fou
 		Key: listNode{
 			key:     key,
 			address: address,
-		}.keyAV(),
+		}.keyAV(c),
 		TableName: aws.String(c.table),
 	}).Send(context.TODO())
 
@@ -519,7 +518,7 @@ func (c Client) listGetByAddress(key string, address string) (node listNode, fou
 
 	if len(resp.Item) > 0 {
 		found = true
-		node = lParseNode(resp.Item)
+		node = lParseNode(resp.Item, c)
 	}
 
 	return
@@ -542,7 +541,7 @@ func (c Client) LRANGE(key string, start, stop int64) (elements []ReturnValue, e
 	nodeMap := make(map[string]listNode)
 	// The most common case is a full fetch, so let's start with that for now.
 	queryCondition := newExpresionBuilder()
-	queryCondition.addConditionEquality(pk, StringValue{key})
+	queryCondition.addConditionEquality(c.pk, StringValue{key})
 
 	hasMoreResults := true
 
@@ -570,7 +569,7 @@ func (c Client) LRANGE(key string, start, stop int64) (elements []ReturnValue, e
 		}
 
 		for _, rawNode := range resp.Items {
-			node := lParseNode(rawNode)
+			node := lParseNode(rawNode, c)
 			nodeMap[node.address] = node
 
 			if node.left == listNull {
@@ -627,9 +626,9 @@ func (c Client) LREM(key string, side LSide, element Value) (newLength int64, do
 			return newLength, false, err
 		}
 
-		actions = append(actions, leftKeyNode.updateSideAction(Right, rightKeyNode.address, c.table))
-		actions = append(actions, rightKeyNode.updateSideAction(Left, leftKeyNode.address, c.table))
-		actions = append(actions, outgoingNode.deleteAction(c.table))
+		actions = append(actions, leftKeyNode.updateSideAction(Right, rightKeyNode.address, c))
+		actions = append(actions, rightKeyNode.updateSideAction(Left, leftKeyNode.address, c))
+		actions = append(actions, outgoingNode.deleteAction(c))
 		actions = append(actions, c.listCountDeltaAction(key, -1))
 	}
 
@@ -660,14 +659,14 @@ func (c Client) LSET(key string, index int64, element string) (ok bool, err erro
 	}
 
 	updater := newExpresionBuilder()
-	updater.addConditionExists(pk)
+	updater.addConditionExists(c.pk)
 	updater.updateSET(vk, StringValue{element})
 
 	_, err = c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
 		ConditionExpression:       updater.conditionExpression(),
 		ExpressionAttributeNames:  updater.expressionAttributeNames(),
 		ExpressionAttributeValues: updater.expressionAttributeValues(),
-		Key:                       node.keyAV(),
+		Key:                       node.keyAV(c),
 		TableName:                 aws.String(c.table),
 		UpdateExpression:          updater.updateExpression(),
 	}).Send(context.TODO())
@@ -730,8 +729,8 @@ func (c Client) listRotate(key string) (element ReturnValue, err error) {
 		// no action to take
 
 	case leftEnd.right == rightEnd.address:
-		actions = append(actions, leftEnd.updateBothSidesAction(rightEnd.address, listNull, c.table))
-		actions = append(actions, rightEnd.updateBothSidesAction(listNull, leftEnd.address, c.table))
+		actions = append(actions, leftEnd.updateBothSidesAction(rightEnd.address, listNull, c))
+		actions = append(actions, rightEnd.updateBothSidesAction(listNull, leftEnd.address, c))
 		element = rightEnd.value
 
 	case leftEnd.right == rightEnd.left:
@@ -744,9 +743,9 @@ func (c Client) listRotate(key string) (element ReturnValue, err error) {
 			return element, errors.New("concurrent modification")
 		}
 
-		actions = append(actions, leftEnd.updateBothSidesAction(rightEnd.address, middle.address, c.table))
-		actions = append(actions, rightEnd.updateBothSidesAction(listNull, leftEnd.address, c.table))
-		actions = append(actions, middle.updateBothSidesAction(leftEnd.address, listNull, c.table))
+		actions = append(actions, leftEnd.updateBothSidesAction(rightEnd.address, middle.address, c))
+		actions = append(actions, rightEnd.updateBothSidesAction(listNull, leftEnd.address, c))
+		actions = append(actions, middle.updateBothSidesAction(leftEnd.address, listNull, c))
 		element = rightEnd.value
 
 	default:
@@ -759,9 +758,9 @@ func (c Client) listRotate(key string) (element ReturnValue, err error) {
 			return element, errors.New("concurrent modification")
 		}
 
-		actions = append(actions, leftEnd.updateSideAction(Left, rightEnd.address, c.table))
-		actions = append(actions, rightEnd.updateBothSidesAction(listNull, leftEnd.address, c.table))
-		actions = append(actions, penultimateRight.updateSideAction(Right, listNull, c.table))
+		actions = append(actions, leftEnd.updateSideAction(Left, rightEnd.address, c))
+		actions = append(actions, rightEnd.updateBothSidesAction(listNull, leftEnd.address, c))
+		actions = append(actions, penultimateRight.updateSideAction(Right, listNull, c))
 		element = rightEnd.value
 	}
 

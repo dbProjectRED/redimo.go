@@ -60,7 +60,7 @@ func xSequenceKey(key string) keyDef {
 	}
 }
 
-func (xid XID) sequenceUpdateAction(key string, table string) dynamodb.TransactWriteItem {
+func (xid XID) sequenceUpdateAction(key string, c Client) dynamodb.TransactWriteItem {
 	builder := newExpresionBuilder()
 	builder.condition(fmt.Sprintf("#%v < :%v", vk, vk), vk)
 	builder.SET(fmt.Sprintf("#%v = :%v", vk, vk), vk, StringValue{xid.String()}.ToAV())
@@ -70,8 +70,8 @@ func (xid XID) sequenceUpdateAction(key string, table string) dynamodb.TransactW
 			ConditionExpression:       builder.conditionExpression(),
 			ExpressionAttributeNames:  builder.expressionAttributeNames(),
 			ExpressionAttributeValues: builder.expressionAttributeValues(),
-			Key:                       xSequenceKey(key).toAV(),
-			TableName:                 aws.String(table),
+			Key:                       xSequenceKey(key).toAV(c),
+			TableName:                 aws.String(c.table),
 			UpdateExpression:          builder.updateExpression(),
 		},
 	}
@@ -136,7 +136,7 @@ type PendingItem struct {
 	DeliveryCount int64
 }
 
-func (pi PendingItem) toPutAction(key string, table string) dynamodb.TransactWriteItem {
+func (pi PendingItem) toPutAction(key string, c Client) dynamodb.TransactWriteItem {
 	builder := newExpresionBuilder()
 	builder.updateSET(consumerKey, StringValue{pi.Consumer})
 	builder.updateSET(lastDeliveryTimestampKey, IntValue{pi.LastDelivered.Unix()})
@@ -149,14 +149,14 @@ func (pi PendingItem) toPutAction(key string, table string) dynamodb.TransactWri
 			ConditionExpression:       builder.conditionExpression(),
 			ExpressionAttributeNames:  builder.expressionAttributeNames(),
 			ExpressionAttributeValues: builder.expressionAttributeValues(),
-			Key:                       keyDef{pk: key, sk: pi.ID.String()}.toAV(),
-			TableName:                 aws.String(table),
+			Key:                       keyDef{pk: key, sk: pi.ID.String()}.toAV(c),
+			TableName:                 aws.String(c.table),
 			UpdateExpression:          builder.updateExpression(),
 		},
 	}
 }
 
-func (pi PendingItem) updateDeliveryAction(key string, table string) *dynamodb.UpdateItemInput {
+func (pi PendingItem) updateDeliveryAction(key string, c Client) *dynamodb.UpdateItemInput {
 	builder := newExpresionBuilder()
 	builder.addConditionEquality(consumerKey, StringValue{pi.Consumer})
 	builder.updateSET(lastDeliveryTimestampKey, IntValue{time.Now().Unix()})
@@ -168,14 +168,14 @@ func (pi PendingItem) updateDeliveryAction(key string, table string) *dynamodb.U
 		ConditionExpression:       builder.conditionExpression(),
 		ExpressionAttributeNames:  builder.expressionAttributeNames(),
 		ExpressionAttributeValues: builder.expressionAttributeValues(),
-		Key:                       keyDef{pk: key, sk: pi.ID.String()}.toAV(),
-		TableName:                 aws.String(table),
+		Key:                       keyDef{pk: key, sk: pi.ID.String()}.toAV(c),
+		TableName:                 aws.String(c.table),
 		UpdateExpression:          builder.updateExpression(),
 	}
 }
 
-func parsePendingItem(avm map[string]dynamodb.AttributeValue) (pi PendingItem) {
-	pi.ID = XID(aws.StringValue(avm[sk].S))
+func parsePendingItem(avm map[string]dynamodb.AttributeValue, c Client) (pi PendingItem) {
+	pi.ID = XID(aws.StringValue(avm[c.sk].S))
 	pi.Consumer = aws.StringValue(avm[consumerKey].S)
 	timestamp, _ := strconv.ParseInt(aws.StringValue(avm[lastDeliveryTimestampKey].N), 10, 64)
 	pi.LastDelivered = time.Unix(timestamp, 0)
@@ -185,19 +185,19 @@ func parsePendingItem(avm map[string]dynamodb.AttributeValue) (pi PendingItem) {
 	return
 }
 
-func (i StreamItem) putAction(key string, table string) dynamodb.TransactWriteItem {
+func (i StreamItem) putAction(key string, c Client) dynamodb.TransactWriteItem {
 	return dynamodb.TransactWriteItem{
 		Put: &dynamodb.Put{
-			Item:      i.toAV(key),
-			TableName: aws.String(table),
+			Item:      i.toAV(key, c),
+			TableName: aws.String(c.table),
 		},
 	}
 }
 
-func (i StreamItem) toAV(key string) map[string]dynamodb.AttributeValue {
+func (i StreamItem) toAV(key string, c Client) map[string]dynamodb.AttributeValue {
 	avm := make(map[string]dynamodb.AttributeValue)
-	avm[pk] = StringValue{key}.ToAV()
-	avm[sk] = StringValue{i.ID.String()}.ToAV()
+	avm[c.pk] = StringValue{key}.ToAV()
+	avm[c.sk] = StringValue{i.ID.String()}.ToAV()
 
 	for k, v := range i.Fields {
 		avm["_"+k] = v.ToAV()
@@ -209,7 +209,7 @@ func (i StreamItem) toAV(key string) map[string]dynamodb.AttributeValue {
 func (c Client) XACK(key string, group string, ids ...XID) (acknowledgedIds []XID, err error) {
 	for _, id := range ids {
 		resp, err := c.ddbClient.DeleteItemRequest(&dynamodb.DeleteItemInput{
-			Key:          keyDef{pk: c.xGroupKey(key, group), sk: id.String()}.toAV(),
+			Key:          keyDef{pk: c.xGroupKey(key, group), sk: id.String()}.toAV(c),
 			ReturnValues: dynamodb.ReturnValueAllOld,
 			TableName:    aws.String(c.table),
 		}).Send(context.TODO())
@@ -261,8 +261,8 @@ func (c Client) XADD(key string, id XID, fields map[string]Value) (returnedID XI
 			wrappedFields[k] = ReturnValue{v.ToAV()}
 		}
 
-		actions = append(actions, StreamItem{ID: id, Fields: wrappedFields}.putAction(key, c.table))
-		actions = append(actions, id.sequenceUpdateAction(key, c.table))
+		actions = append(actions, StreamItem{ID: id, Fields: wrappedFields}.putAction(key, c))
+		actions = append(actions, id.sequenceUpdateAction(key, c))
 
 		_, err := c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
 			TransactItems: actions,
@@ -308,7 +308,7 @@ func (c Client) xInitAction(key string) dynamodb.TransactWriteItem {
 			ConditionExpression:       builder.conditionExpression(),
 			ExpressionAttributeNames:  builder.expressionAttributeNames(),
 			ExpressionAttributeValues: builder.expressionAttributeValues(),
-			Key:                       xSequenceKey(key).toAV(),
+			Key:                       xSequenceKey(key).toAV(c),
 			TableName:                 aws.String(c.table),
 			UpdateExpression:          builder.updateExpression(),
 		},
@@ -318,7 +318,7 @@ func (c Client) xInitAction(key string) dynamodb.TransactWriteItem {
 func (c Client) XCLAIM(key string, group string, consumer string, lastDeliveredBefore time.Time, ids ...XID) (items []StreamItem, err error) {
 	for _, id := range ids {
 		builder := newExpresionBuilder()
-		builder.addConditionExists(pk)
+		builder.addConditionExists(c.pk)
 		builder.addConditionLessThanOrEqualTo(lastDeliveryTimestampKey, IntValue{lastDeliveredBefore.Unix()})
 		builder.updateSET(lastDeliveryTimestampKey, IntValue{time.Now().Unix()})
 		builder.updateSET(deliveryCountKey, IntValue{0})
@@ -328,7 +328,7 @@ func (c Client) XCLAIM(key string, group string, consumer string, lastDeliveredB
 			ConditionExpression:       builder.conditionExpression(),
 			ExpressionAttributeNames:  builder.expressionAttributeNames(),
 			ExpressionAttributeValues: builder.expressionAttributeValues(),
-			Key:                       keyDef{pk: c.xGroupKey(key, group), sk: id.String()}.toAV(),
+			Key:                       keyDef{pk: c.xGroupKey(key, group), sk: id.String()}.toAV(c),
 			TableName:                 aws.String(c.table),
 			UpdateExpression:          builder.updateExpression(),
 		}).Send(context.TODO())
@@ -363,7 +363,7 @@ func (c Client) XCLAIM(key string, group string, consumer string, lastDeliveredB
 func (c Client) XDEL(key string, ids ...XID) (deletedItems []XID, err error) {
 	for _, id := range ids {
 		resp, err := c.ddbClient.DeleteItemRequest(&dynamodb.DeleteItemInput{
-			Key:          keyDef{pk: key, sk: id.String()}.toAV(),
+			Key:          keyDef{pk: key, sk: id.String()}.toAV(c),
 			ReturnValues: dynamodb.ReturnValueAllOld,
 			TableName:    aws.String(c.table),
 		}).Send(context.TODO())
@@ -394,7 +394,7 @@ func (c Client) xGroupCursorSet(key string, group string, start XID) error {
 func (c Client) xGroupCursorGet(key string, group string) (id XID, err error) {
 	resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
 		ConsistentRead: aws.Bool(true),
-		Key:            c.xGroupCursorKey(key, group).toAV(),
+		Key:            c.xGroupCursorKey(key, group).toAV(c),
 		TableName:      aws.String(c.table),
 	}).Send(context.TODO())
 	if err != nil {
@@ -424,8 +424,8 @@ func (c Client) XLEN(key string, start, stop XID) (count int64, err error) {
 
 	for hasMoreResults {
 		builder := newExpresionBuilder()
-		builder.addConditionEquality(pk, StringValue{key})
-		builder.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", sk), sk)
+		builder.addConditionEquality(c.pk, StringValue{key})
+		builder.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", c.sk), c.sk)
 		builder.values["start"] = start.av()
 		builder.values["stop"] = stop.av()
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
@@ -462,8 +462,8 @@ func (c Client) XPENDING(key string, group string, count int64) (pendingItems []
 
 	for hasMoreResults && count > 0 {
 		builder := newExpresionBuilder()
-		builder.addConditionEquality(pk, StringValue{c.xGroupKey(key, group)})
-		builder.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", sk), sk)
+		builder.addConditionEquality(c.pk, StringValue{c.xGroupKey(key, group)})
+		builder.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", c.sk), c.sk)
 		builder.values["start"] = XStart.av()
 		builder.values["stop"] = XEnd.av()
 
@@ -489,7 +489,7 @@ func (c Client) XPENDING(key string, group string, count int64) (pendingItems []
 		}
 
 		for _, item := range resp.Items {
-			pendingItems = append(pendingItems, parsePendingItem(item))
+			pendingItems = append(pendingItems, parsePendingItem(item, c))
 			count--
 		}
 	}
@@ -527,8 +527,8 @@ func (c Client) xRange(key string, start, stop XID, count int64, forward bool) (
 
 	for hasMoreResults && count > 0 {
 		builder := newExpresionBuilder()
-		builder.addConditionEquality(pk, StringValue{key})
-		builder.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", sk), sk)
+		builder.addConditionEquality(c.pk, StringValue{key})
+		builder.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", c.sk), c.sk)
 		builder.values["start"] = start.av()
 		builder.values["stop"] = stop.av()
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
@@ -553,7 +553,7 @@ func (c Client) xRange(key string, start, stop XID, count int64, forward bool) (
 		}
 
 		for _, resultItem := range resp.Items {
-			streamItems = append(streamItems, parseStreamItem(resultItem))
+			streamItems = append(streamItems, parseStreamItem(resultItem, c))
 			count--
 		}
 	}
@@ -561,7 +561,7 @@ func (c Client) xRange(key string, start, stop XID, count int64, forward bool) (
 	return
 }
 
-func parseStreamItem(item map[string]dynamodb.AttributeValue) (si StreamItem) {
+func parseStreamItem(item map[string]dynamodb.AttributeValue, c Client) (si StreamItem) {
 	si.Fields = make(map[string]ReturnValue)
 
 	for k, v := range item {
@@ -570,7 +570,7 @@ func parseStreamItem(item map[string]dynamodb.AttributeValue) (si StreamItem) {
 		}
 	}
 
-	si.ID = XID(aws.StringValue(item[sk].S))
+	si.ID = XID(aws.StringValue(item[c.sk].S))
 
 	return
 }
@@ -585,7 +585,7 @@ func (c Client) xGroupCursorPushAction(key string, group string, id XID) dynamod
 			ConditionExpression:       builder.conditionExpression(),
 			ExpressionAttributeNames:  builder.expressionAttributeNames(),
 			ExpressionAttributeValues: builder.expressionAttributeValues(),
-			Key:                       c.xGroupCursorKey(key, group).toAV(),
+			Key:                       c.xGroupCursorKey(key, group).toAV(c),
 			TableName:                 aws.String(c.table),
 			UpdateExpression:          builder.updateExpression(),
 		},
@@ -618,8 +618,8 @@ func (c Client) xGroupReadPending(key string, group string, consumer string, cou
 
 	for hasMoreResults && count > 0 {
 		query := newExpresionBuilder()
-		query.addConditionEquality(pk, StringValue{c.xGroupKey(key, group)})
-		query.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", sk), sk)
+		query.addConditionEquality(c.pk, StringValue{c.xGroupKey(key, group)})
+		query.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", c.sk), c.sk)
 		query.values["start"] = StringValue{XStart.String()}.ToAV()
 		query.values["stop"] = StringValue{XEnd.String()}.ToAV()
 		query.values[consumerKey] = StringValue{consumer}.ToAV()
@@ -647,9 +647,9 @@ func (c Client) xGroupReadPending(key string, group string, consumer string, cou
 		}
 
 		for _, item := range resp.Items {
-			pendingItem := parsePendingItem(item)
+			pendingItem := parsePendingItem(item, c)
 
-			_, err = c.ddbClient.UpdateItemRequest(pendingItem.updateDeliveryAction(c.xGroupKey(key, group), c.table)).Send(context.TODO())
+			_, err = c.ddbClient.UpdateItemRequest(pendingItem.updateDeliveryAction(c.xGroupKey(key, group), c)).Send(context.TODO())
 			if err != nil {
 				return items, err
 			}
@@ -696,7 +696,7 @@ func (c Client) XREADGROUP(key string, group string, consumer string, option XRe
 				ID:            item.ID,
 				Consumer:      consumer,
 				LastDelivered: time.Now(),
-			}.toPutAction(c.xGroupKey(key, group), c.table))
+			}.toPutAction(c.xGroupKey(key, group), c))
 		}
 
 		_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
@@ -733,8 +733,8 @@ func (c Client) XTRIM(key string, newCount int64) (deletedCount int64, err error
 
 	for hasMoreResults {
 		builder := newExpresionBuilder()
-		builder.addConditionEquality(pk, StringValue{key})
-		builder.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", sk), sk)
+		builder.addConditionEquality(c.pk, StringValue{key})
+		builder.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", c.sk), c.sk)
 		builder.values["start"] = XStart.av()
 		builder.values["stop"] = XEnd.av()
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
@@ -743,7 +743,7 @@ func (c Client) XTRIM(key string, newCount int64) (deletedCount int64, err error
 			ExpressionAttributeNames:  builder.expressionAttributeNames(),
 			ExpressionAttributeValues: builder.expressionAttributeValues(),
 			KeyConditionExpression:    builder.conditionExpression(),
-			ProjectionExpression:      aws.String(strings.Join([]string{pk, sk}, ",")),
+			ProjectionExpression:      aws.String(strings.Join([]string{c.pk, c.sk}, ",")),
 			ScanIndexForward:          aws.Bool(false),
 			TableName:                 aws.String(c.table),
 		}).Send(context.TODO())
@@ -762,7 +762,7 @@ func (c Client) XTRIM(key string, newCount int64) (deletedCount int64, err error
 
 		for _, item := range resp.Items {
 			if newCount == 0 {
-				parsedItem := parseKey(item)
+				parsedItem := parseKey(item, c)
 				idsToDelete = append(idsToDelete, XID(parsedItem.sk))
 			} else {
 				newCount--

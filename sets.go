@@ -13,19 +13,17 @@ type setMember struct {
 	sk string
 }
 
-const skRandomN = skN
-
-func (sm setMember) toAV() map[string]dynamodb.AttributeValue {
-	av := sm.keyAV()
-	av[skRandomN] = IntValue{rand.Int63()}.ToAV()
+func (sm setMember) toAV(c Client) map[string]dynamodb.AttributeValue {
+	av := sm.keyAV(c)
+	av[c.skN] = IntValue{rand.Int63()}.ToAV()
 
 	return av
 }
 
-func (sm setMember) keyAV() map[string]dynamodb.AttributeValue {
+func (sm setMember) keyAV(c Client) map[string]dynamodb.AttributeValue {
 	av := make(map[string]dynamodb.AttributeValue)
-	av[pk] = StringValue{sm.pk}.ToAV()
-	av[sk] = StringValue{sm.sk}.ToAV()
+	av[c.pk] = StringValue{sm.pk}.ToAV()
+	av[c.sk] = StringValue{sm.sk}.ToAV()
 
 	return av
 }
@@ -33,7 +31,7 @@ func (sm setMember) keyAV() map[string]dynamodb.AttributeValue {
 func (c Client) SADD(key string, members ...string) (addedMembers []string, err error) {
 	for _, member := range members {
 		resp, err := c.ddbClient.PutItemRequest(&dynamodb.PutItemInput{
-			Item:         setMember{pk: key, sk: member}.toAV(),
+			Item:         setMember{pk: key, sk: member}.toAV(c),
 			ReturnValues: dynamodb.ReturnValueAllOld,
 			TableName:    aws.String(c.table),
 		}).Send(context.TODO())
@@ -142,7 +140,7 @@ func (c Client) SINTERSTORE(destinationKey string, sourceKey string, otherKeys .
 func (c Client) SISMEMBER(key string, member string) (ok bool, err error) {
 	resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
 		ConsistentRead: aws.Bool(c.consistentReads),
-		Key:            setMember{pk: key, sk: member}.keyAV(),
+		Key:            setMember{pk: key, sk: member}.keyAV(c),
 		TableName:      aws.String(c.table),
 	}).Send(context.TODO())
 	if err != nil || len(resp.Item) == 0 {
@@ -159,7 +157,7 @@ func (c Client) SMEMBERS(key string) (members []string, err error) {
 
 	for hasMoreResults {
 		builder := newExpresionBuilder()
-		builder.addConditionEquality(pk, StringValue{key})
+		builder.addConditionEquality(c.pk, StringValue{key})
 
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 			ConsistentRead:            aws.Bool(c.consistentReads),
@@ -175,7 +173,7 @@ func (c Client) SMEMBERS(key string) (members []string, err error) {
 		}
 
 		for _, item := range resp.Items {
-			parsedItem := parseItem(item)
+			parsedItem := parseItem(item, c)
 			members = append(members, parsedItem.sk)
 		}
 
@@ -191,7 +189,7 @@ func (c Client) SMEMBERS(key string) (members []string, err error) {
 
 func (c Client) SMOVE(sourceKey string, destinationKey string, member string) (ok bool, err error) {
 	builder := newExpresionBuilder()
-	builder.addConditionExists(pk)
+	builder.addConditionExists(c.pk)
 
 	_, err = c.ddbClient.TransactWriteItemsRequest(&dynamodb.TransactWriteItemsInput{
 		TransactItems: []dynamodb.TransactWriteItem{
@@ -200,13 +198,13 @@ func (c Client) SMOVE(sourceKey string, destinationKey string, member string) (o
 					ConditionExpression:       builder.conditionExpression(),
 					ExpressionAttributeNames:  builder.expressionAttributeNames(),
 					ExpressionAttributeValues: builder.expressionAttributeValues(),
-					Key:                       setMember{pk: sourceKey, sk: member}.keyAV(),
+					Key:                       setMember{pk: sourceKey, sk: member}.keyAV(c),
 					TableName:                 aws.String(c.table),
 				},
 			},
 			{
 				Put: &dynamodb.Put{
-					Item:      setMember{pk: destinationKey, sk: member}.toAV(),
+					Item:      setMember{pk: destinationKey, sk: member}.toAV(c),
 					TableName: aws.String(c.table),
 				},
 			},
@@ -239,7 +237,7 @@ func (c Client) SRANDMEMBER(key string, count int64) (members []string, err erro
 	}
 
 	builder := newExpresionBuilder()
-	builder.addConditionEquality(pk, StringValue{key})
+	builder.addConditionEquality(c.pk, StringValue{key})
 
 	resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 		ConsistentRead:            aws.Bool(c.consistentReads),
@@ -255,7 +253,7 @@ func (c Client) SRANDMEMBER(key string, count int64) (members []string, err erro
 	}
 
 	for _, item := range resp.Items {
-		parsedItem := parseItem(item)
+		parsedItem := parseItem(item, c)
 		members = append(members, parsedItem.sk)
 	}
 
@@ -268,7 +266,7 @@ func (c Client) SREM(key string, members ...string) (removedMembers []string, er
 			Key: setMember{
 				pk: key,
 				sk: member,
-			}.keyAV(),
+			}.keyAV(c),
 			ReturnValues: dynamodb.ReturnValueAllOld,
 			TableName:    aws.String(c.table),
 		}).Send(context.TODO())

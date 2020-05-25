@@ -13,7 +13,6 @@ import (
 )
 
 const earthRadiusMeters = 6372797.560856
-const skGeoCell = skN
 
 type GLocation struct {
 	Lat float64
@@ -80,13 +79,13 @@ func (c Client) GEOADD(key string, members map[string]GLocation) (newlyAddedMemb
 
 	for member, location := range members {
 		builder := newExpresionBuilder()
-		builder.updateSetAV(skGeoCell, location.toAV())
+		builder.updateSetAV(c.skN, location.toAV())
 
 		resp, err := c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
 			ConditionExpression:       builder.conditionExpression(),
 			ExpressionAttributeNames:  builder.expressionAttributeNames(),
 			ExpressionAttributeValues: builder.expressionAttributeValues(),
-			Key:                       keyDef{pk: key, sk: member}.toAV(),
+			Key:                       keyDef{pk: key, sk: member}.toAV(c),
 			ReturnValues:              dynamodb.ReturnValueAllOld,
 			TableName:                 aws.String(c.table),
 			UpdateExpression:          builder.updateExpression(),
@@ -151,7 +150,7 @@ func (c Client) GEOPOS(key string, members ...string) (locations map[string]GLoc
 	for _, member := range members {
 		resp, err := c.ddbClient.GetItemRequest(&dynamodb.GetItemInput{
 			ConsistentRead: aws.Bool(c.consistentReads),
-			Key:            keyDef{pk: key, sk: member}.toAV(),
+			Key:            keyDef{pk: key, sk: member}.toAV(c),
 			TableName:      aws.String(c.table),
 		}).Send(context.TODO())
 
@@ -160,7 +159,7 @@ func (c Client) GEOPOS(key string, members ...string) (locations map[string]GLoc
 		}
 
 		if len(resp.Item) > 0 {
-			locations[member] = fromCellIDString(aws.StringValue(resp.Item[skGeoCell].N))
+			locations[member] = fromCellIDString(aws.StringValue(resp.Item[c.skN].N))
 		}
 	}
 
@@ -185,8 +184,8 @@ func (c Client) GEORADIUS(key string, center GLocation, radius float64, radiusUn
 
 	for _, cellID := range radiusCap.CellUnionBound() {
 		builder := newExpresionBuilder()
-		builder.addConditionEquality(pk, StringValue{key})
-		builder.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", skGeoCell), skGeoCell)
+		builder.addConditionEquality(c.pk, StringValue{key})
+		builder.condition(fmt.Sprintf("#%v BETWEEN :start AND :stop", c.skN), c.skN)
 		builder.values["start"] = dynamodb.AttributeValue{N: aws.String(fmt.Sprintf("%d", cellID.RangeMin()))}
 		builder.values["stop"] = dynamodb.AttributeValue{N: aws.String(fmt.Sprintf("%d", cellID.RangeMax()))}
 
@@ -200,7 +199,7 @@ func (c Client) GEORADIUS(key string, center GLocation, radius float64, radiusUn
 				ExclusiveStartKey:         cursor,
 				ExpressionAttributeNames:  builder.expressionAttributeNames(),
 				ExpressionAttributeValues: builder.expressionAttributeValues(),
-				IndexName:                 c.getIndex(skGeoCell),
+				IndexName:                 aws.String(c.index),
 				KeyConditionExpression:    builder.conditionExpression(),
 				Limit:                     aws.Int64(count),
 				TableName:                 aws.String(c.table),
@@ -216,8 +215,8 @@ func (c Client) GEORADIUS(key string, center GLocation, radius float64, radiusUn
 			}
 
 			for _, item := range resp.Items {
-				location := fromCellIDString(aws.StringValue(item[skGeoCell].N))
-				member := aws.StringValue(item[sk].S)
+				location := fromCellIDString(aws.StringValue(item[c.skN].N))
+				member := aws.StringValue(item[c.sk].S)
 
 				if center.DistanceTo(location, radiusUnit) <= radius {
 					positions[member] = location

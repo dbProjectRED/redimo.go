@@ -19,8 +19,6 @@ const (
 	ZAggregationMax ZAggregation = "MAX"
 )
 
-const skScore = skN
-
 var accumulators = map[ZAggregation]func(float64, float64) float64{
 	ZAggregationSum: func(a float64, b float64) float64 {
 		return a + b
@@ -83,21 +81,21 @@ func zScoreFromAV(av dynamodb.AttributeValue) float64 {
 func (c Client) ZADD(key string, membersWithScores map[string]float64, flags Flags) (addedMembers []string, err error) {
 	for member, score := range membersWithScores {
 		builder := newExpresionBuilder()
-		builder.updateSetAV(skScore, zScore{score}.ToAV())
+		builder.updateSetAV(c.skN, zScore{score}.ToAV())
 
 		if flags.has(IfNotExists) {
-			builder.addConditionNotExists(pk)
+			builder.addConditionNotExists(c.pk)
 		}
 
 		if flags.has(IfAlreadyExists) {
-			builder.addConditionExists(pk)
+			builder.addConditionExists(c.pk)
 		}
 
 		resp, err := c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
 			ConditionExpression:       builder.conditionExpression(),
 			ExpressionAttributeNames:  builder.expressionAttributeNames(),
 			ExpressionAttributeValues: builder.expressionAttributeValues(),
-			Key:                       keyDef{pk: key, sk: member}.toAV(),
+			Key:                       keyDef{pk: key, sk: member}.toAV(c),
 			ReturnValues:              dynamodb.ReturnValueAllOld,
 			TableName:                 aws.String(c.table),
 			UpdateExpression:          builder.updateExpression(),
@@ -123,12 +121,12 @@ func (c Client) ZCARD(key string) (count int64, err error) {
 }
 
 func (c Client) ZCOUNT(key string, minScore, maxScore float64) (count int64, err error) {
-	return c.zGeneralCount(key, zScore{minScore}, zScore{maxScore}, skScore)
+	return c.zGeneralCount(key, zScore{minScore}, zScore{maxScore}, c.skN)
 }
 
 func (c Client) zGeneralCount(key string, min rangeCap, max rangeCap, attribute string) (count int64, err error) {
 	builder := newExpresionBuilder()
-	builder.addConditionEquality(pk, StringValue{key})
+	builder.addConditionEquality(c.pk, StringValue{key})
 
 	betweenRange := min.present() && max.present()
 
@@ -155,14 +153,17 @@ func (c Client) zGeneralCount(key string, min rangeCap, max rangeCap, attribute 
 	hasMoreResults := true
 
 	var lastEvaluatedKey map[string]dynamodb.AttributeValue
-
+	var queryIndex *string
+	if attribute == c.skN {
+		queryIndex = aws.String(c.index)
+	}
 	for hasMoreResults {
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 			ConsistentRead:            aws.Bool(c.consistentReads),
 			ExclusiveStartKey:         lastEvaluatedKey,
 			ExpressionAttributeNames:  builder.expressionAttributeNames(),
 			ExpressionAttributeValues: builder.expressionAttributeValues(),
-			IndexName:                 c.getIndex(attribute),
+			IndexName:                 queryIndex,
 			KeyConditionExpression:    builder.conditionExpression(),
 			Select:                    dynamodb.SelectCount,
 			TableName:                 aws.String(c.table),
@@ -186,7 +187,7 @@ func (c Client) zGeneralCount(key string, min rangeCap, max rangeCap, attribute 
 
 func (c Client) ZINCRBY(key string, member string, delta float64) (newScore float64, err error) {
 	builder := newExpresionBuilder()
-	builder.keys[skScore] = struct{}{}
+	builder.keys[c.skN] = struct{}{}
 	builder.values["delta"] = zScore{delta}.ToAV()
 
 	resp, err := c.ddbClient.UpdateItemRequest(&dynamodb.UpdateItemInput{
@@ -196,16 +197,16 @@ func (c Client) ZINCRBY(key string, member string, delta float64) (newScore floa
 		Key: keyDef{
 			pk: key,
 			sk: member,
-		}.toAV(),
+		}.toAV(c),
 		ReturnValues:     dynamodb.ReturnValueAllNew,
 		TableName:        aws.String(c.table),
-		UpdateExpression: aws.String(fmt.Sprintf("ADD #%v :delta", skScore)),
+		UpdateExpression: aws.String(fmt.Sprintf("ADD #%v :delta", c.skN)),
 	}).Send(context.TODO())
 	if err != nil {
 		return newScore, err
 	}
 
-	newScore = zScoreFromAV(resp.Attributes[skScore])
+	newScore = zScoreFromAV(resp.Attributes[c.skN])
 
 	return
 }
@@ -220,7 +221,7 @@ func (c Client) ZINTERSTORE(destinationKey string, sourceKeys []string, aggregat
 }
 
 func (c Client) ZLEXCOUNT(key string, min string, max string) (count int64, err error) {
-	return c.zGeneralCount(key, zLex{min}, zLex{max}, sk)
+	return c.zGeneralCount(key, zLex{min}, zLex{max}, c.sk)
 }
 
 func (c Client) ZPOPMAX(key string, count int64) (membersWithScores map[string]float64, err error) {
@@ -235,7 +236,7 @@ var negInf = zScore{math.Inf(-1)}
 var posInf = zScore{math.Inf(+1)}
 
 func (c Client) zPop(key string, count int64, forward bool) (membersWithScores map[string]float64, err error) {
-	membersWithScores, err = c.zGeneralRange(key, negInf, posInf, 0, count, forward, skScore)
+	membersWithScores, err = c.zGeneralRange(key, negInf, posInf, 0, count, forward, c.skN)
 	if err != nil {
 		return
 	}
@@ -262,19 +263,19 @@ func (c Client) ZRANGE(key string, start, stop int64) (membersWithScores map[str
 
 func (c Client) zRange(key string, start int64, stop int64, forward bool) (membersWithScores map[string]float64, err error) {
 	if start < 0 && stop < 0 {
-		return c.zGeneralRange(key, negInf, posInf, -stop-1, -start, !forward, skScore)
+		return c.zGeneralRange(key, negInf, posInf, -stop-1, -start, !forward, c.skN)
 	}
 
 	if start > 0 && stop < 0 {
-		lastScore, err := c.zGeneralRange(key, negInf, posInf, -stop-1, 1, !forward, skScore)
+		lastScore, err := c.zGeneralRange(key, negInf, posInf, -stop-1, 1, !forward, c.skN)
 		if err != nil {
 			return membersWithScores, err
 		}
 
-		return c.zGeneralRange(key, negInf, zScore{floatValues(lastScore)[0]}, start, 0, forward, skScore)
+		return c.zGeneralRange(key, negInf, zScore{floatValues(lastScore)[0]}, start, 0, forward, c.skN)
 	}
 
-	return c.zGeneralRange(key, negInf, posInf, start, stop-start+1, forward, skScore)
+	return c.zGeneralRange(key, negInf, posInf, start, stop-start+1, forward, c.skN)
 }
 
 func floatValues(floatValuedMap map[string]float64) (values []float64) {
@@ -286,11 +287,11 @@ func floatValues(floatValuedMap map[string]float64) (values []float64) {
 }
 
 func (c Client) ZRANGEBYLEX(key string, min, max string, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return c.zGeneralRange(key, zLex{min}, zLex{max}, offset, count, true, sk)
+	return c.zGeneralRange(key, zLex{min}, zLex{max}, offset, count, true, c.sk)
 }
 
 func (c Client) ZRANGEBYSCORE(key string, min, max float64, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return c.zGeneralRange(key, zScore{min}, zScore{max}, offset, count, true, skScore)
+	return c.zGeneralRange(key, zScore{min}, zScore{max}, offset, count, true, c.skN)
 }
 
 func (c Client) zGeneralRange(key string,
@@ -311,7 +312,7 @@ func (c Client) zGeneralRange(key string,
 		}
 
 		builder := newExpresionBuilder()
-		builder.addConditionEquality(pk, StringValue{key})
+		builder.addConditionEquality(c.pk, StringValue{key})
 
 		if start.present() {
 			builder.values["start"] = start.ToAV()
@@ -330,12 +331,16 @@ func (c Client) zGeneralRange(key string,
 			builder.condition(fmt.Sprintf("#%v <= :stop", attribute), attribute)
 		}
 
+		var queryIndex *string
+		if attribute == c.skN {
+			queryIndex = aws.String(c.index)
+		}
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 			ConsistentRead:            aws.Bool(c.consistentReads),
 			ExclusiveStartKey:         lastKey,
 			ExpressionAttributeNames:  builder.expressionAttributeNames(),
 			ExpressionAttributeValues: builder.expressionAttributeValues(),
-			IndexName:                 c.getIndex(attribute),
+			IndexName:                 queryIndex,
 			KeyConditionExpression:    builder.conditionExpression(),
 			Limit:                     queryLimit,
 			ScanIndexForward:          aws.Bool(forward),
@@ -347,8 +352,8 @@ func (c Client) zGeneralRange(key string,
 
 		for _, item := range resp.Items {
 			if index >= offset {
-				pi := parseItem(item)
-				membersWithScores[pi.sk] = zScoreFromAV(item[skScore])
+				pi := parseItem(item, c)
+				membersWithScores[pi.sk] = zScoreFromAV(item[c.skN])
 				remainingCount--
 			}
 			index++
@@ -377,9 +382,9 @@ func (c Client) zRank(key string, member string, forward bool) (rank int64, ok b
 	var count int64
 
 	if forward {
-		count, err = c.zGeneralCount(key, negInf, zScore{score}, skScore)
+		count, err = c.zGeneralCount(key, negInf, zScore{score}, c.skN)
 	} else {
-		count, err = c.zGeneralCount(key, zScore{score}, posInf, skScore)
+		count, err = c.zGeneralCount(key, zScore{score}, posInf, c.skN)
 	}
 
 	if err == nil {
@@ -392,7 +397,7 @@ func (c Client) zRank(key string, member string, forward bool) (rank int64, ok b
 func (c Client) ZREM(key string, members ...string) (removedMembers []string, err error) {
 	for _, member := range members {
 		resp, err := c.ddbClient.DeleteItemRequest(&dynamodb.DeleteItemInput{
-			Key:          keyDef{pk: key, sk: member}.toAV(),
+			Key:          keyDef{pk: key, sk: member}.toAV(c),
 			ReturnValues: dynamodb.ReturnValueAllOld,
 			TableName:    aws.String(c.table),
 		}).Send(context.TODO())
@@ -450,11 +455,11 @@ func (c Client) ZREVRANGE(key string, start, stop int64) (membersWithScores map[
 }
 
 func (c Client) ZREVRANGEBYLEX(key string, max, min string, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return c.zGeneralRange(key, zLex{min}, zLex{max}, offset, count, false, sk)
+	return c.zGeneralRange(key, zLex{min}, zLex{max}, offset, count, false, c.sk)
 }
 
 func (c Client) ZREVRANGEBYSCORE(key string, max, min float64, offset, count int64) (membersWithScores map[string]float64, err error) {
-	return c.zGeneralRange(key, zScore{min}, zScore{max}, offset, count, false, skScore)
+	return c.zGeneralRange(key, zScore{min}, zScore{max}, offset, count, false, c.skN)
 }
 
 func (c Client) ZREVRANK(key string, member string) (rank int64, found bool, err error) {
@@ -467,13 +472,13 @@ func (c Client) ZSCORE(key string, member string) (score float64, found bool, er
 		Key: keyDef{
 			pk: key,
 			sk: member,
-		}.toAV(),
-		ProjectionExpression: aws.String(strings.Join([]string{skScore}, ", ")),
+		}.toAV(c),
+		ProjectionExpression: aws.String(strings.Join([]string{c.skN}, ", ")),
 		TableName:            aws.String(c.table),
 	}).Send(context.TODO())
 	if err == nil && len(resp.Item) > 0 {
 		found = true
-		score = zScoreFromAV(resp.Item[skScore])
+		score = zScoreFromAV(resp.Item[c.skN])
 	}
 
 	return
