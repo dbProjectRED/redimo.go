@@ -24,7 +24,7 @@ import (
 // the last possible sequence number in the last second of the range, which is what the Last() method provides.
 type XID string
 
-var ErrXGroupNotInitialized = errors.New("group not initialized")
+var ErrXGroupNotInitialized = errors.New("consumer group not initialized with XGROUP")
 
 const consumerKey = "cnk"
 const lastDeliveryTimestampKey = "ldk"
