@@ -203,6 +203,19 @@ func (c Client) mset(data map[string]Value, flags Flags) (ok bool, err error) {
 	return true, nil
 }
 
+// INCRBYFLOAT increments the number stored at the key with the given float64 delta (n = n + delta) and returns
+// the new value. If the key does not exist, it will be initialized with zero before applying
+// the operation.
+//
+// The delta can be positive or negative, and a zero delta is effectively a no-op.
+//
+// If there is an existing value at the key with a non-numeric type (string, bytes, etc.)
+// the operation will throw an error. If the existing value is numeric, the operation
+// can continue irrespective of how it was initially set.
+//
+// Cost is O(1) or 1 WCU.
+//
+// Works similar to https://redis.io/commands/incrbyfloat
 func (c Client) INCRBYFLOAT(key string, delta float64) (after float64, err error) {
 	rv, err := c.incr(key, FloatValue{delta})
 	if err == nil {
@@ -233,14 +246,44 @@ func (c Client) incr(key string, value Value) (newValue ReturnValue, err error) 
 	return
 }
 
+// INCR increments the number stored at the key by 1 (n = n + 1) and returns the new value. If the
+// key does not exist, it will be initialized with zero before applying the operation.
+//
+// If there is an existing value at the key with a non-numeric type (string, bytes, etc.)
+// the operation will throw an error. If the existing value is numeric, the operation
+// can continue irrespective of how it was initially set.
+//
+// Cost is O(1) or 1 WCU.
+//
+// Works similar to https://redis.io/commands/incr
 func (c Client) INCR(key string) (after int64, err error) {
 	return c.INCRBY(key, 1)
 }
 
+// DECR decrements the number stored at the key by 1 (n = n - 1) and returns the new value. If the
+// key does not exist, it will be initialized with zero before applying the operation.
+//
+// If there is an existing value at the key with a non-numeric type (string, bytes, etc.)
+// the operation will throw an error. If the existing value is numeric, the operation
+// can continue irrespective of how it was initially set.
+//
+// Cost is O(1) or 1 WCU.
+//
+// Works similar to https://redis.io/commands/decr
 func (c Client) DECR(key string) (after int64, err error) {
 	return c.INCRBY(key, -1)
 }
 
+// INCRBY increments the number stored at the key with the given delta (n = n + delta) and returns the new value. If the
+// key does not exist, it will be initialized with zero before applying the operation.
+//
+// If there is an existing value at the key with a non-numeric type (string, bytes, etc.)
+// the operation will throw an error. If the existing value is numeric, the operation
+// can continue irrespective of how it was initially set.
+//
+// Cost is O(1) or 1 WCU.
+//
+// Works similar to https://redis.io/commands/incrby
 func (c Client) INCRBY(key string, delta int64) (after int64, err error) {
 	rv, err := c.incr(key, IntValue{delta})
 	if err == nil {
@@ -250,6 +293,16 @@ func (c Client) INCRBY(key string, delta int64) (after int64, err error) {
 	return
 }
 
+// DECRBY decrements the number stored at the key with the given delta (n = n - delta) and returns the new value. If the
+// key does not exist, it will be initialized with zero before applying the operation.
+//
+// If there is an existing value at the key with a non-numeric type (string, bytes, etc.)
+// the operation will throw an error. If the existing value is numeric, the operation
+// can continue irrespective of how it was initially set.
+//
+// Cost is O(1) or 1 WCU.
+//
+// Works similar to https://redis.io/commands/decrby
 func (c Client) DECRBY(key string, delta int64) (after int64, err error) {
 	return c.INCRBY(key, -delta)
 }
