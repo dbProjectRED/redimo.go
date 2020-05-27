@@ -379,6 +379,16 @@ func (c Client) XDEL(key string, ids ...XID) (deletedItems []XID, err error) {
 	return
 }
 
+// XGROUP creates a new group for the stream at the given key. Specifying the start XID
+// as XStart will cause consumers of the group to read from the beginning of the stream,
+// and any existing or generated XID can be used to denote a custom starting point.
+//
+// This is a required initialization step before the group can be used. Trying to use
+// XREADGROUP without using XGROUP to initialize the group will return an error.
+//
+// Cost is O(1) / 1 WCU.
+//
+// Works similar to https://redis.io/commands/xgroup
 func (c Client) XGROUP(key string, group string, start XID) (err error) {
 	err = c.xGroupCursorSet(key, group, start)
 	return

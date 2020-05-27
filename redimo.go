@@ -28,6 +28,7 @@ func (c Client) EventuallyConsistent() Client {
 func (c Client) Table(table, index string) Client {
 	c.table = table
 	c.index = index
+
 	return c
 }
 
@@ -35,6 +36,7 @@ func (c Client) Attributes(pk string, sk string, skN string) Client {
 	c.pk = pk
 	c.sk = sk
 	c.skN = skN
+
 	return c
 }
 

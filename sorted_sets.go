@@ -153,10 +153,13 @@ func (c Client) zGeneralCount(key string, min rangeCap, max rangeCap, attribute 
 	hasMoreResults := true
 
 	var lastEvaluatedKey map[string]dynamodb.AttributeValue
+
 	var queryIndex *string
+
 	if attribute == c.skN {
 		queryIndex = aws.String(c.index)
 	}
+
 	for hasMoreResults {
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 			ConsistentRead:            aws.Bool(c.consistentReads),
@@ -335,6 +338,7 @@ func (c Client) zGeneralRange(key string,
 		if attribute == c.skN {
 			queryIndex = aws.String(c.index)
 		}
+
 		resp, err := c.ddbClient.QueryRequest(&dynamodb.QueryInput{
 			ConsistentRead:            aws.Bool(c.consistentReads),
 			ExclusiveStartKey:         lastKey,
@@ -346,6 +350,7 @@ func (c Client) zGeneralRange(key string,
 			ScanIndexForward:          aws.Bool(forward),
 			TableName:                 aws.String(c.table),
 		}).Send(context.TODO())
+
 		if err != nil {
 			return membersWithScores, err
 		}
