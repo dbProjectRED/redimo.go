@@ -91,6 +91,7 @@ func (xid XID) Prev() XID {
 	return NewXID(xid.Time(), xid.Seq()-1)
 }
 
+// Time returns the time represented by this XID, accurate to one second.
 func (xid XID) Time() time.Time {
 	parts := strings.Split(xid.String(), "-")
 	tsec, _ := strconv.ParseInt(parts[0], 10, 64)
@@ -98,6 +99,8 @@ func (xid XID) Time() time.Time {
 	return time.Unix(tsec, 0)
 }
 
+// Seq returns the sequence number represented by this XID. To get the next and previous
+// valid XIDs for range pagination, see Next() and Prev().
 func (xid XID) Seq() uint64 {
 	parts := strings.Split(xid.String(), "-")
 	seq, _ := strconv.ParseUint(parts[1], 10, 64)
@@ -427,6 +430,12 @@ func (c Client) xGroupKey(key string, group string) string {
 	return strings.Join([]string{"_redimo", key, group}, "/")
 }
 
+// XLEN counts the number of items in the stream with XIDs between the given XIDs. To count
+// the entire stream, pass XStart and XEnd as the start and end XIDs.
+//
+// Cost is O(N) or ~N RCUs where N is the number / size of items counted.
+//
+// Works similar to https://redis.io/commands/xlen
 func (c Client) XLEN(key string, start, stop XID) (count int64, err error) {
 	hasMoreResults := true
 
