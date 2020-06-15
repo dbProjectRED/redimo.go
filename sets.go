@@ -28,6 +28,13 @@ func (sm setMember) keyAV(c Client) map[string]dynamodb.AttributeValue {
 	return av
 }
 
+// SADD adds the given string members to the set at the given key.
+//
+// Returns that members that were actually added and did not already exist in the set.
+//
+// Cost is O(1) / 1 WCU for each member, whether it already exists or not.
+//
+// Works similar to https://redis.io/commands/sadd
 func (c Client) SADD(key string, members ...string) (addedMembers []string, err error) {
 	for _, member := range members {
 		resp, err := c.ddbClient.PutItemRequest(&dynamodb.PutItemInput{
@@ -47,6 +54,11 @@ func (c Client) SADD(key string, members ...string) (addedMembers []string, err 
 	return
 }
 
+// SCARD returns the cardinality (the number of elements) in the set at key.
+//
+// Cost is O(size) / 1 WCU per 4KB of data counted.
+//
+// Works similar to https://redis.io/commands/scard
 func (c Client) SCARD(key string) (count int64, err error) {
 	return c.HLEN(key)
 }
