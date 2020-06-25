@@ -1,4 +1,4 @@
-module github.com/sudhirj/redimo.go
+module github.com/dbProjectRED/redimo.go
 
 go 1.14
 
